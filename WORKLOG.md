@@ -47,3 +47,20 @@
 - tests/test_store.py:存取往返单测,通过。
 
 下一步:阶段三 M6。FastAPI + WebSocket 实时推送 + 两个前端页面(实时弹幕流、看板)。管道改成把每条记录既入库又推给前端。看板指标:在线人数、弹幕速率、礼物榜、活跃用户、热词。
+
+## 2026-07-09 14:51
+
+阶段三(服务 + 看板)完成,真实数据端到端并截图确认渲染。用户优先要热词和在线人数曲线,两者都做出来了。三个 git 提交(阶段三 3ad754a + 修复 5c91fd2)。
+
+做了什么:
+- 在线人数解析:探针从样例帧确认 WebcastRoomStatsMessage.displayValue 就是当前在线人数(displayLong="148在线观众"),proto 补 RoomStatsMessage/RoomUserSeqMessage,parse_records 产出 room_stat。
+- stats.py:热词(jieba 分词 + 停用词过滤)、在线人数序列、汇总计数、活跃用户榜,只读查 SQLite。
+- server.py:FastAPI + uvicorn。启动后台线程跑 collect,每条记录入库 + push 广播;REST 接口 summary/hotwords/online_series/top_users/danmu;WebSocket /ws 实时推送;托管两个页面。采集异常自动 5 秒重连。
+- 前端 src/web/index.html(实时弹幕流)、dashboard.html(看板:在线人数曲线用 canvas 手绘带渐变、弹幕热词云按词频缩放、活跃用户榜、最近弹幕、四个数字卡),暗色抖音风,内联无外部依赖便于打包。
+- 实测 292525714929:服务 1 秒起,两页面 200,API 返回真实数据(在线 97、热词 型号/护腰/支撑…、真实弹幕),预览工具截图看板与弹幕流均正确渲染,绿点表示 WebSocket 实时连着,数字实时累积。
+
+踩坑:
+- .gitignore 的 *.html 把前端页面 src/web/*.html 也忽略了,阶段三首次提交漏了前端;收窄成只忽略 room_page.html/page_*.html 后补回。SQLite 的 *.db-shm/-wal 也要加进 gitignore,别误提交。
+- 前端页面 DB 路径:server 的 DB_PATH 改成基于脚本目录的绝对路径,预览/打包时不受 cwd 影响。
+
+下一步:阶段四 M7 打包 exe(PyInstaller,含 chromium 引导 + 前端静态资源 + webmssdk.js)。以及可选增强:礼物 GMV、弹幕速率曲线、多房间。

@@ -30,19 +30,35 @@
 - [x] 模块三:连接采集 `src/collector_browser.py`(浏览器 hook,过 DEVICE_BLOCKED,已抓到真帧)
 - [x] 模块四:protobuf 解析 `src/parse.py` + `src/proto/douyin.proto`(真实弹幕已解出)
 - [x] 模块五:存储 `src/store.py` + 管道 `src/pipeline.py`(采集→解析→入库,真实弹幕持续入库,含 `tests/test_store.py`)
-- [ ] 模块六:实时弹幕流 + 看板前端
+- [x] 模块六:服务 + 前端 `src/server.py` + `src/stats.py` + `src/web/`(FastAPI + WebSocket 实时推送,实时弹幕流页 + 看板页:在线人数曲线、弹幕热词、活跃用户榜)
 - [ ] 模块七:打包为 Windows 程序
 
-阶段一(采集内核)、阶段二(存储)已完成并用真实数据验证。详细计划见 `docs/plan-20260709.md`。
+阶段一(采集内核)、阶段二(存储)、阶段三(服务+看板)已完成并用真实数据端到端验证(看板与弹幕流均已截图确认渲染)。详细计划见 `docs/plan-20260709.md`。
 
-## 已跑通的采集入库管道
+## 运行
+
+首次准备:
 
 ```
 pip install -r requirements.txt
 python -m playwright install chromium
+```
+
+启动完整程序(服务 + 实时看板,推荐):
+
+```
+set DY_WEB_RID=<直播间web_rid> && python src/server.py
+# 浏览器打开 http://127.0.0.1:8848/         看实时弹幕流
+#           http://127.0.0.1:8848/dashboard 看数据看板(在线曲线/弹幕热词/活跃榜)
+# 不设 DY_WEB_RID 时默认房间 292525714929
+```
+
+只跑采集入库(不开看板):
+
+```
 python src/pipeline.py <web_rid> <秒数>
 # 例:python src/pipeline.py 292525714929 40
-# 浏览器采集 -> 解析 -> 写入 danmu.db,结果摘要见 pipeline_result.json
+# 浏览器采集 -> 解析 -> 写入 danmu.db
 ```
 
 ## 运行(当前可跑的部分)
