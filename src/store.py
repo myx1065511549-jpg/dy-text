@@ -31,8 +31,20 @@ CREATE TABLE IF NOT EXISTS room_stat (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   room_id TEXT, online_count INTEGER, ts INTEGER, created_at TEXT
 );
+CREATE TABLE IF NOT EXISTS blocklist (
+  user_id TEXT PRIMARY KEY, nickname TEXT, blocked_at TEXT
+);
+CREATE TABLE IF NOT EXISTS meta (
+  key TEXT PRIMARY KEY, value TEXT
+);
 CREATE INDEX IF NOT EXISTS idx_danmu_room_ts ON danmu(room_id, ts);
+CREATE INDEX IF NOT EXISTS idx_danmu_user ON danmu(user_id);
+CREATE INDEX IF NOT EXISTS idx_danmu_created ON danmu(created_at);
+CREATE INDEX IF NOT EXISTS idx_enter_created ON enter(created_at);
 """
+
+# 切换直播间时要清空的数据表(屏蔽名单不清)
+_DATA_TABLES = ("danmu", "gift", "enter", "likes", "room_stat")
 
 
 class Store:
@@ -85,10 +97,45 @@ class Store:
         self.conn.commit()
 
     def clear(self):
-        """清空所有表(切换直播间时,让统计对新房间从零开始)。"""
-        for t in ("danmu", "gift", "enter", "likes", "room_stat"):
+        """切换直播间时清空数据表 + meta,但保留屏蔽名单。"""
+        for t in _DATA_TABLES:
             self.conn.execute(f"DELETE FROM {t}")
+        self.conn.execute("DELETE FROM meta")
         self.conn.commit()
+
+    # ---- 累计场观等单值状态存 meta ----
+    def set_meta(self, key, value):
+        self.conn.execute(
+            "INSERT INTO meta(key,value) VALUES(?,?) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, str(value)))
+
+    def get_meta(self, key, default=None):
+        row = self.conn.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()
+        return row[0] if row else default
+
+    # ---- 屏蔽名单 ----
+    def block(self, user_id, nickname):
+        if not user_id:
+            return False
+        self.conn.execute(
+            "INSERT INTO blocklist(user_id,nickname,blocked_at) VALUES(?,?,?) "
+            "ON CONFLICT(user_id) DO UPDATE SET nickname=excluded.nickname",
+            (user_id, nickname or "", self._now()))
+        self.conn.commit()
+        return True
+
+    def unblock(self, user_id):
+        self.conn.execute("DELETE FROM blocklist WHERE user_id=?", (user_id,))
+        self.conn.commit()
+
+    def blocklist(self):
+        rows = self.conn.execute(
+            "SELECT user_id, nickname, blocked_at FROM blocklist ORDER BY blocked_at DESC"
+        ).fetchall()
+        return [{"user_id": a, "nickname": b, "blocked_at": c} for a, b, c in rows]
+
+    def blocked_ids(self):
+        return {r[0] for r in self.conn.execute("SELECT user_id FROM blocklist").fetchall()}
 
     def counts(self) -> dict:
         cur = self.conn.cursor()

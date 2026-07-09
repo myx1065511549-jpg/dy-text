@@ -36,6 +36,7 @@ clients = set()
 loop = None
 current_rid = [WEB_RID]          # 当前监控的直播间(可运行时切换)
 switch_event = threading.Event()  # 置位表示要切房间,采集器据此停当前浏览器
+blocked_ids = set()               # 已屏蔽用户(内存镜像,用于实时推送跳过)
 
 
 async def _broadcast(data: str):
@@ -71,16 +72,23 @@ def collector_thread():
         def on_frame(raw):
             recs = parse_records(raw)
             for r in recs:
-                store.save(r)
                 t = r["type"]
+                if t == "total_user":
+                    store.set_meta("total_user", r["total_user"])
+                    continue
+                store.save(r)
+                uid = r.get("user_id")
+                blocked = uid in blocked_ids
                 if t == "chat":
-                    push({"kind": "chat", "nickname": r.get("nickname"),
-                          "content": r.get("content")})
+                    if not blocked:
+                        push({"kind": "chat", "user_id": uid,
+                              "nickname": r.get("nickname"), "content": r.get("content")})
                 elif t == "room_stat" and r.get("online_count") is not None:
                     push({"kind": "online", "t": time.strftime("%H:%M:%S"),
                           "v": r["online_count"]})
                 elif t in ("enter", "like", "gift"):
-                    push({"kind": t, "nickname": r.get("nickname")})
+                    if not blocked:
+                        push({"kind": t, "nickname": r.get("nickname")})
             if recs:
                 store.commit()
 
@@ -98,6 +106,9 @@ def collector_thread():
 async def _startup():
     global loop
     loop = asyncio.get_event_loop()
+    s = Store(DB_PATH)                 # 确保建表
+    blocked_ids.update(s.blocked_ids())  # 载入已有屏蔽名单
+    s.close()
     threading.Thread(target=collector_thread, daemon=True).start()
 
 
@@ -166,10 +177,73 @@ def api_danmu(limit: int = 60):
     c = _conn()
     try:
         rows = c.execute(
-            "SELECT nickname, content, created_at FROM danmu "
+            f"SELECT user_id, nickname, content, created_at FROM danmu WHERE {stats.NB} "
             "ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
-        return [{"nickname": a, "content": b, "created_at": d}
-                for a, b, d in rows][::-1]
+        return [{"user_id": u, "nickname": a, "content": b, "created_at": d}
+                for u, a, b, d in rows][::-1]
+    finally:
+        c.close()
+
+
+@app.get("/api/voc")
+def api_voc():
+    c = _conn()
+    try:
+        return stats.voc(c)
+    finally:
+        c.close()
+
+
+@app.get("/api/user_danmu")
+def api_user_danmu(user_id: str, limit: int = 100):
+    c = _conn()
+    try:
+        return stats.user_danmu(c, user_id, limit)
+    finally:
+        c.close()
+
+
+@app.post("/api/block")
+def api_block(user_id: str, nickname: str = ""):
+    uid = (user_id or "").strip()
+    if not uid:
+        return {"ok": False}
+    c = _conn()
+    try:
+        c.execute(
+            "INSERT INTO blocklist(user_id,nickname,blocked_at) "
+            "VALUES(?,?,datetime('now','localtime')) "
+            "ON CONFLICT(user_id) DO UPDATE SET nickname=excluded.nickname", (uid, nickname))
+        c.commit()
+    finally:
+        c.close()
+    blocked_ids.add(uid)
+    push({"kind": "blocked", "user_id": uid, "nickname": nickname})
+    return {"ok": True}
+
+
+@app.post("/api/unblock")
+def api_unblock(user_id: str):
+    uid = (user_id or "").strip()
+    c = _conn()
+    try:
+        c.execute("DELETE FROM blocklist WHERE user_id=?", (uid,))
+        c.commit()
+    finally:
+        c.close()
+    blocked_ids.discard(uid)
+    push({"kind": "unblocked", "user_id": uid})
+    return {"ok": True}
+
+
+@app.get("/api/blocklist")
+def api_blocklist():
+    c = _conn()
+    try:
+        rows = c.execute(
+            "SELECT user_id, nickname, blocked_at FROM blocklist ORDER BY blocked_at DESC"
+        ).fetchall()
+        return [{"user_id": a, "nickname": b, "blocked_at": d} for a, b, d in rows]
     finally:
         c.close()
 

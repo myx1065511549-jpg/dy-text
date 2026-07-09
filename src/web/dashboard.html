@@ -3,171 +3,275 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>直播数据看板</title>
+<title>抖音直播实时看板</title>
 <style>
   :root{
-    --bg:#141419; --bg2:#1c1c24; --bg3:#24242e;
-    --text:#ececf2; --text2:#a0a0b0; --muted:#6c6c7c;
-    --accent:#fe2c55; --cyan:#25f4ee; --border:#2c2c38;
-    --radius:14px;
+    --bg:#101015; --bg2:#181820; --bg3:#20202a; --bg4:#282833;
+    --text:#ececf2; --text2:#9a9aac; --muted:#63636f;
+    --accent:#fe2c55; --cyan:#25f4ee; --green:#28c76f; --amber:#ffab2e; --border:#2a2a36;
+    --radius:12px;
   }
   *{box-sizing:border-box;margin:0;padding:0}
-  body{background:var(--bg);color:var(--text);min-height:100vh;
+  body{background:var(--bg);color:var(--text);min-height:100vh;font-size:14px;
     font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
-  header{display:flex;align-items:center;gap:12px;padding:12px 24px;
-    background:var(--bg2);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:5;flex-wrap:wrap}
-  header h1{font-size:16px;font-weight:600}
+  header{display:flex;align-items:center;gap:14px;padding:11px 20px;background:var(--bg2);
+    border-bottom:1px solid var(--border);position:sticky;top:0;z-index:10;flex-wrap:wrap}
+  header .logo{font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px}
+  header .logo .b{color:var(--accent)}
   .rid{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--text2);
     background:var(--bg3);padding:3px 8px;border-radius:6px}
-  .dot{width:8px;height:8px;border-radius:50%;background:var(--muted);transition:background .3s}
-  .dot.on{background:#28c76f;box-shadow:0 0 8px #28c76f}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--muted);transition:.3s}
+  .dot.on{background:var(--green);box-shadow:0 0 8px var(--green)}
+  .stat-live{font-size:12px;color:var(--text2)}
   .spacer{flex:1}
-  .switch{display:flex;align-items:center;gap:8px}
-  .switch label{font-size:13px;color:var(--text2)}
+  .switch{display:flex;align-items:center;gap:7px}
   .switch input{background:var(--bg3);border:1px solid var(--border);color:var(--text);
-    padding:7px 10px;border-radius:8px;font-size:13px;width:150px;outline:none;
-    font-family:ui-monospace,monospace}
+    padding:6px 10px;border-radius:7px;font-size:13px;width:140px;outline:none;font-family:ui-monospace,monospace}
   .switch input:focus{border-color:var(--accent)}
-  .switch button{background:var(--accent);color:#fff;border:none;padding:7px 16px;
-    border-radius:8px;font-size:13px;cursor:pointer;font-weight:600;transition:opacity .15s}
-  .switch button:hover{opacity:.88}
-  .switch button:active{transform:translateY(1px)}
-  a.nav{color:var(--cyan);text-decoration:none;font-size:13px;
-    border:1px solid var(--border);padding:6px 12px;border-radius:8px}
-  a.nav:hover{background:var(--bg3)}
-  .wrap{padding:18px 24px;max-width:1400px;margin:0 auto}
-  .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:16px}
-  .card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:16px}
-  .card .label{font-size:13px;color:var(--text2);margin-bottom:8px}
-  .card .num{font-size:32px;font-weight:700;font-family:ui-monospace,Consolas,monospace;line-height:1}
-  .card.live .num{color:var(--accent)}
-  .grid{display:grid;grid-template-columns:1.35fr 1fr;gap:16px;align-items:start}
-  .panel{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);
-    padding:16px;margin-bottom:16px}
-  .panel h2{font-size:14px;font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:8px}
-  .panel h2 .bar{width:3px;height:14px;background:var(--accent);border-radius:2px}
-  .panel h2 .cnt{margin-left:auto;font-size:12px;color:var(--muted);font-weight:400}
-  canvas{width:100%;height:230px;display:block}
-  .cloud{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:baseline;min-height:110px}
-  .cloud span{line-height:1;cursor:default;transition:transform .15s}
-  .cloud span:hover{transform:scale(1.12)}
-  .users .u{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);font-size:14px}
-  .users .u:last-child{border:0}
-  .users .u .n{color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:70%}
-  .users .u .c{font-family:ui-monospace,monospace;color:var(--cyan)}
-  /* 右栏:实时弹幕流 */
-  .stream-panel{position:sticky;top:74px;display:flex;flex-direction:column;
-    height:calc(100vh - 92px);margin-bottom:0}
-  #stream{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:6px;padding-right:4px}
-  .row{display:flex;gap:10px;align-items:baseline;padding:6px 8px;border-radius:8px;animation:in .22s ease}
+  .switch button{background:var(--accent);color:#fff;border:none;padding:6px 14px;border-radius:7px;
+    font-size:13px;cursor:pointer;font-weight:600}
+  .switch button:hover{opacity:.9}
+  .upd{font-size:12px;color:var(--muted)}
+  .wrap{padding:14px 20px;max-width:1560px;margin:0 auto}
+
+  /* 分组指标卡 */
+  .groups{display:grid;grid-template-columns:1.4fr 1.4fr 1fr;gap:14px;margin-bottom:14px}
+  .group{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px}
+  .group>.gt{font-size:13px;color:var(--text2);margin-bottom:12px;display:flex;align-items:center;gap:6px}
+  .group>.gt::before{content:"";width:3px;height:12px;background:var(--accent);border-radius:2px}
+  .metrics{display:flex;gap:8px}
+  .metric{flex:1;min-width:0}
+  .metric .k{font-size:12px;color:var(--text2);margin-bottom:6px;white-space:nowrap}
+  .metric .v{font-size:26px;font-weight:700;font-family:ui-monospace,Consolas,monospace;line-height:1}
+  .metric .v.a{color:var(--accent)} .metric .v.c{color:var(--cyan)} .metric .v.b{color:#4d8bff}
+  .metric .sub{font-size:11px;color:var(--muted);margin-top:6px;white-space:nowrap}
+  .metric .sub .up{color:var(--green)}
+
+  .grid{display:grid;grid-template-columns:1.35fr 1fr 0.92fr;gap:14px;align-items:start}
+  .col{display:flex;flex-direction:column;gap:14px;min-width:0}
+  .panel{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:14px}
+  .panel h2{font-size:13px;font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+  .panel h2 .bar{width:3px;height:13px;background:var(--accent);border-radius:2px}
+  .panel h2 .r{margin-left:auto;font-size:12px;color:var(--muted);font-weight:400;display:flex;gap:4px}
+  .panel h2 .r button{background:var(--bg3);border:1px solid var(--border);color:var(--text2);
+    font-size:11px;padding:2px 8px;border-radius:6px;cursor:pointer}
+  .panel h2 .r button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  canvas{width:100%;height:210px;display:block}
+
+  /* VOC */
+  .voc .vr{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)}
+  .voc .vr:last-child{border:0}
+  .voc .vn{width:78px;font-size:13px;flex-shrink:0}
+  .voc .vbar{flex:1;height:8px;background:var(--bg4);border-radius:4px;overflow:hidden}
+  .voc .vbar i{display:block;height:100%;background:linear-gradient(90deg,var(--accent),#ff6b8a);border-radius:4px}
+  .voc .vc{width:36px;text-align:right;font-family:ui-monospace,monospace;font-size:14px}
+  .voc .vrec{width:54px;text-align:right;font-size:11px;color:var(--muted)}
+  .voc .vrec .hot{color:var(--amber)}
+
+  /* 热词 */
+  .cloud{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:baseline;min-height:70px}
+  .cloud span{line-height:1;cursor:default}
+
+  /* 弹幕流 */
+  .stream-panel{position:sticky;top:66px;display:flex;flex-direction:column;height:calc(100vh - 84px)}
+  #stream{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:3px;padding-right:2px}
+  .row{display:flex;gap:8px;align-items:baseline;padding:5px 7px;border-radius:7px;position:relative;animation:in .2s}
   .row:hover{background:var(--bg3)}
-  .row .nick{color:var(--cyan);font-size:13px;font-weight:500;flex-shrink:0;max-width:150px;
+  .row .nick{color:var(--cyan);font-size:12px;font-weight:500;flex-shrink:0;max-width:120px;
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .row .txt{font-size:14px;line-height:1.4;word-break:break-word}
-  .row.enter .nick{color:var(--text2)}
-  .row.enter .txt{color:var(--muted);font-size:12px}
-  .row.sys .txt{color:var(--muted);font-size:12px}
-  .row.gift .txt{color:var(--accent)}
-  @keyframes in{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
-  #stream::-webkit-scrollbar{width:7px}
-  #stream::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px}
-  .empty{color:var(--muted);font-size:13px}
-  @media(max-width:960px){.cards{grid-template-columns:repeat(2,1fr)}.grid{grid-template-columns:1fr}
-    .stream-panel{height:520px;position:static}}
+  .row .txt{font-size:13px;line-height:1.4;word-break:break-word;flex:1}
+  .row.enter .nick{color:var(--text2)} .row.enter .txt{color:var(--muted);font-size:12px}
+  .row.gift .txt{color:var(--accent)} .row.sys .txt{color:var(--muted);font-size:12px}
+  .row .blk{display:none;flex-shrink:0;background:var(--bg4);border:1px solid var(--border);
+    color:var(--text2);font-size:11px;padding:1px 7px;border-radius:5px;cursor:pointer}
+  .row:hover .blk{display:inline-block}
+  .row .blk:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
+  @keyframes in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+  #stream::-webkit-scrollbar,.scroll::-webkit-scrollbar{width:7px}
+  #stream::-webkit-scrollbar-thumb,.scroll::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px}
+
+  /* 榜单 / 屏蔽池 */
+  .rank .u{display:flex;align-items:center;gap:8px;padding:7px 6px;border-radius:6px;cursor:pointer;font-size:13px}
+  .rank .u:hover{background:var(--bg3)}
+  .rank .u .idx{width:18px;color:var(--muted);font-family:ui-monospace,monospace;text-align:center}
+  .rank .u .idx.top{color:var(--amber);font-weight:700}
+  .rank .u .n{flex:1;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .rank .u .c{font-family:ui-monospace,monospace;color:var(--cyan)}
+  .rank .hint{font-size:11px;color:var(--muted);margin-top:8px}
+  .block-pool{max-height:240px;overflow-y:auto}
+  .block-pool .bu{display:flex;align-items:center;gap:8px;padding:7px 6px;border-bottom:1px solid var(--border);font-size:13px}
+  .block-pool .bu .n{flex:1;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .block-pool .bu button{background:var(--bg4);border:1px solid var(--border);color:var(--text2);
+    font-size:11px;padding:2px 9px;border-radius:5px;cursor:pointer}
+  .block-pool .bu button:hover{background:var(--green);color:#fff;border-color:var(--green)}
+  .empty{color:var(--muted);font-size:13px;padding:6px 0}
+
+  /* modal */
+  .mask{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:50}
+  .mask.show{display:flex}
+  .modal{background:var(--bg2);border:1px solid var(--border);border-radius:14px;width:min(560px,92vw);
+    max-height:80vh;display:flex;flex-direction:column;overflow:hidden}
+  .modal .mh{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--border)}
+  .modal .mh .t{font-weight:600} .modal .mh .cnt{font-size:12px;color:var(--muted)}
+  .modal .mh .x{margin-left:auto;cursor:pointer;color:var(--text2);font-size:18px;line-height:1}
+  .modal .mb{padding:8px 18px 16px;overflow-y:auto}
+  .modal .mb .h{padding:7px 0;border-bottom:1px solid var(--border);font-size:13px;display:flex;gap:10px}
+  .modal .mb .h .tm{color:var(--muted);font-family:ui-monospace,monospace;font-size:11px;flex-shrink:0}
+  .modal .mh .ban{margin-left:8px;background:var(--accent);color:#fff;border:none;padding:5px 12px;
+    border-radius:6px;font-size:12px;cursor:pointer}
+
+  @media(max-width:1200px){.grid{grid-template-columns:1fr 1fr}.stream-panel{height:520px;position:static}
+    .col.right{grid-column:1/-1}}
+  @media(max-width:820px){.groups{grid-template-columns:1fr}.grid{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
 <header>
-  <span class="dot" id="dot"></span>
-  <h1>直播数据看板</h1>
+  <span class="logo"><span class="b">▮▮</span> 抖音直播实时看板</span>
   <span class="rid" id="rid">--</span>
+  <span class="dot" id="dot"></span><span class="stat-live" id="statTxt">连接中</span>
+  <span class="spacer"></span>
   <div class="switch">
-    <label>直播间</label>
-    <input id="roomInput" placeholder="输入 web_rid" spellcheck="false">
+    <input id="roomInput" placeholder="输入直播间 web_rid" spellcheck="false">
     <button id="switchBtn">切换监控</button>
   </div>
-  <span class="spacer"></span>
-  <a class="nav" href="/stream" target="_blank">独立弹幕流 ↗</a>
+  <span class="upd" id="upd">最后更新 --:--:--</span>
 </header>
+
 <div class="wrap">
-  <div class="cards">
-    <div class="card live"><div class="label">当前在线</div><div class="num" id="c_online">--</div></div>
-    <div class="card"><div class="label">弹幕总数</div><div class="num" id="c_danmu">0</div></div>
-    <div class="card"><div class="label">进场人次</div><div class="num" id="c_enter">0</div></div>
-    <div class="card"><div class="label">点赞</div><div class="num" id="c_likes">0</div></div>
+  <div class="groups">
+    <div class="group">
+      <div class="gt">流量</div>
+      <div class="metrics">
+        <div class="metric"><div class="k">进场人次</div><div class="v b" id="m_enter">0</div>
+          <div class="sub" id="s_enter">速率 -- 人/分</div></div>
+        <div class="metric"><div class="k">当前在线</div><div class="v a" id="m_online">--</div>
+          <div class="sub" id="s_online">峰值 --</div></div>
+        <div class="metric"><div class="k">累计场观</div><div class="v" id="m_total">--</div>
+          <div class="sub">本场累计</div></div>
+      </div>
+    </div>
+    <div class="group">
+      <div class="gt">互动</div>
+      <div class="metrics">
+        <div class="metric"><div class="k">弹幕</div><div class="v a" id="m_danmu">0</div>
+          <div class="sub" id="s_danmu">速率 -- 条/分</div></div>
+        <div class="metric"><div class="k">点赞</div><div class="v c" id="m_likes">0</div>
+          <div class="sub" id="s_likes">近5分 --</div></div>
+        <div class="metric"><div class="k">礼物</div><div class="v" id="m_gift">0</div>
+          <div class="sub">本场</div></div>
+      </div>
+    </div>
+    <div class="group">
+      <div class="gt">用户量</div>
+      <div class="metrics">
+        <div class="metric"><div class="k">独立用户</div><div class="v c" id="m_uu">0</div>
+          <div class="sub">去重</div></div>
+        <div class="metric"><div class="k">已屏蔽</div><div class="v" id="m_blocked">0</div>
+          <div class="sub">工作人员等</div></div>
+      </div>
+    </div>
   </div>
+
   <div class="grid">
-    <div>
+    <div class="col">
       <div class="panel">
-        <h2><span class="bar"></span>在线人数曲线</h2>
+        <h2><span class="bar"></span>在线人数趋势
+          <span class="r" id="rangeBtns">
+            <button data-m="5">5分</button><button data-m="20" class="on">20分</button>
+            <button data-m="60">1小时</button><button data-m="0">全场</button>
+          </span>
+        </h2>
         <canvas id="chart"></canvas>
       </div>
       <div class="panel">
-        <h2><span class="bar"></span>弹幕热词</h2>
-        <div class="cloud" id="cloud"><span class="empty">暂无弹幕热词</span></div>
+        <h2><span class="bar"></span>VOC 问题弹幕队列 <span class="r" id="vocHint"></span></h2>
+        <div class="voc" id="voc"><span class="empty">采集中…</span></div>
       </div>
       <div class="panel">
-        <h2><span class="bar"></span>活跃用户榜</h2>
-        <div class="users" id="users"><span class="empty">暂无数据</span></div>
+        <h2><span class="bar"></span>弹幕热词</h2>
+        <div class="cloud" id="cloud"><span class="empty">暂无</span></div>
       </div>
     </div>
-    <div class="panel stream-panel">
-      <h2><span class="bar"></span>实时弹幕流 <span class="cnt" id="streamCnt"></span></h2>
-      <div id="stream"><span class="empty">等待弹幕…</span></div>
+
+    <div class="col">
+      <div class="panel stream-panel">
+        <h2><span class="bar"></span>实时弹幕流 <span class="r" id="streamCnt"></span></h2>
+        <div id="stream"><span class="empty">等待弹幕…</span></div>
+      </div>
+    </div>
+
+    <div class="col right">
+      <div class="panel">
+        <h2><span class="bar"></span>发言榜</h2>
+        <div class="rank" id="users"><span class="empty">暂无数据</span></div>
+        <div class="hint">点击用户查看其历史弹幕</div>
+      </div>
+      <div class="panel">
+        <h2><span class="bar"></span>屏蔽池 <span class="r" id="blkCnt"></span></h2>
+        <div class="block-pool scroll" id="pool"><span class="empty">暂无屏蔽用户</span></div>
+      </div>
     </div>
   </div>
 </div>
-<script>
-const $ = id => document.getElementById(id);
-let counts = {danmu:0, enter:0, likes:0};
-let series = [];
-let streamInited = false;
 
-function setRid(r){ $('rid').textContent = r; }
+<div class="mask" id="mask"><div class="modal">
+  <div class="mh"><span class="t" id="mUser"></span><span class="cnt" id="mCnt"></span>
+    <button class="ban" id="mBan">屏蔽该用户</button><span class="x" id="mClose">×</span></div>
+  <div class="mb" id="mBody"></div>
+</div></div>
+
+<script>
+const $=id=>document.getElementById(id);
+let counts={danmu:0,enter:0,likes:0,gift:0};
+let series=[];            // {ts:ms, v}
+let rangeMin=20;
+let blocked=new Set();
+let curModalUser=null;
+
+function fmtWan(n){ if(n==null) return '--'; if(n>=10000) return (n/10000).toFixed(1)+'万'; return ''+n; }
+function nowTime(){ return new Date().toTimeString().slice(0,8); }
+function touch(){ $('upd').textContent='最后更新 '+nowTime(); }
 
 fetch('/api/config').then(r=>r.json()).then(c=>{ setRid(c.web_rid); $('roomInput').value=c.web_rid; });
+function setRid(r){ $('rid').textContent='房间号 '+r; }
 
-// ---- 切换直播间 ----
-function doSwitch(){
-  const rid = $('roomInput').value.trim();
-  if(!rid) return;
-  fetch('/api/switch?web_rid='+encodeURIComponent(rid), {method:'POST'});
-  // 立即给反馈,真正清空在 WS 收到 switch 时统一做
-  addRow('sys', null, '正在切换到 '+rid+' …');
-}
-$('switchBtn').onclick = doSwitch;
-$('roomInput').addEventListener('keydown', e=>{ if(e.key==='Enter') doSwitch(); });
-
+// ---------- 切换直播间 ----------
+function doSwitch(){ const rid=$('roomInput').value.trim(); if(!rid) return;
+  fetch('/api/switch?web_rid='+encodeURIComponent(rid),{method:'POST'});
+  addRow('sys',{txt:'正在切换到 '+rid+' …'}); }
+$('switchBtn').onclick=doSwitch;
+$('roomInput').addEventListener('keydown',e=>{ if(e.key==='Enter') doSwitch(); });
 function resetAll(rid){
   setRid(rid); $('roomInput').value=rid;
-  counts={danmu:0,enter:0,likes:0};
-  $('c_danmu').textContent=0; $('c_enter').textContent=0; $('c_likes').textContent=0;
-  $('c_online').textContent='--';
+  counts={danmu:0,enter:0,likes:0,gift:0};
+  ['m_danmu','m_enter','m_likes','m_gift'].forEach(i=>$(i).textContent=0);
+  $('m_online').textContent='--'; $('m_total').textContent='--'; $('m_uu').textContent=0;
   series=[]; drawChart();
+  $('voc').innerHTML='<span class="empty">采集新房间中…</span>';
   $('cloud').innerHTML='<span class="empty">采集新房间中…</span>';
   $('users').innerHTML='<span class="empty">采集新房间中…</span>';
   $('stream').innerHTML=''; streamInited=true;
-  addRow('sys', null, '已切换到 '+rid+',开始采集');
+  addRow('sys',{txt:'已切换到 '+rid+',开始采集'});
 }
 
-// ---- 弹幕流 ----
-const MAXROW=250; let rowCount=0;
-function addRow(kind, nick, txt){
+// ---------- 弹幕流 ----------
+const MAXROW=280; let rowCount=0; let streamInited=false;
+function addRow(kind,d){
   const stream=$('stream');
   if(!streamInited){ stream.innerHTML=''; streamInited=true; }
-  const row=document.createElement('div');
-  row.className='row '+kind;
+  const row=document.createElement('div'); row.className='row '+kind;
+  if(d.user_id) row.dataset.uid=d.user_id;
   if(kind==='chat'){
-    row.innerHTML='<span class="nick"></span><span class="txt"></span>';
-    row.children[0].textContent=nick||''; row.children[1].textContent=txt||'';
+    row.innerHTML='<span class="nick"></span><span class="txt"></span><span class="blk">屏蔽</span>';
+    row.children[0].textContent=d.nick||''; row.children[1].textContent=d.txt||'';
+    row.children[2].onclick=()=>blockUser(d.user_id,d.nick);
   } else if(kind==='enter'){
-    row.innerHTML='<span class="nick"></span><span class="txt">来了</span>';
-    row.children[0].textContent=nick||'';
+    row.innerHTML='<span class="nick"></span><span class="txt">来了</span>'; row.children[0].textContent=d.nick||'';
   } else if(kind==='gift'){
-    row.innerHTML='<span class="nick"></span><span class="txt">送出礼物</span>';
-    row.children[0].textContent=nick||'';
+    row.innerHTML='<span class="nick"></span><span class="txt">送出礼物</span>'; row.children[0].textContent=d.nick||'';
   } else if(kind==='sys'){
-    row.innerHTML='<span class="txt"></span>'; row.children[0].textContent=txt||'';
+    row.innerHTML='<span class="txt"></span>'; row.children[0].textContent=d.txt||'';
   } else return;
   const atBottom=stream.scrollHeight-stream.scrollTop-stream.clientHeight<90;
   stream.appendChild(row);
@@ -175,89 +279,159 @@ function addRow(kind, nick, txt){
   if(atBottom) stream.scrollTop=stream.scrollHeight;
   rowCount++; $('streamCnt').textContent=rowCount+' 条';
 }
-
-function loadSummary(){
-  fetch('/api/summary').then(r=>r.json()).then(s=>{
-    counts.danmu=s.danmu; counts.enter=s.enter; counts.likes=s.likes;
-    $('c_danmu').textContent=s.danmu; $('c_enter').textContent=s.enter; $('c_likes').textContent=s.likes;
-    if(s.online!=null) $('c_online').textContent=s.online;
-  });
+function removeUserRows(uid){
+  document.querySelectorAll('#stream .row[data-uid="'+uid+'"]').forEach(r=>r.remove());
 }
-function loadSeries(){ fetch('/api/online_series').then(r=>r.json()).then(d=>{ series=d; drawChart(); }); }
-function loadHotwords(){
-  fetch('/api/hotwords').then(r=>r.json()).then(list=>{
-    const cloud=$('cloud');
-    if(!list.length){ cloud.innerHTML='<span class="empty">暂无弹幕热词</span>'; return; }
-    const max=list[0].count,min=list[list.length-1].count,cols=['var(--accent)','var(--cyan)','var(--text)'];
-    cloud.innerHTML='';
-    list.forEach((w,i)=>{
-      const sz=14+(max>min?(w.count-min)/(max-min)*26:12);
-      const s=document.createElement('span');
-      s.textContent=w.word; s.style.fontSize=sz.toFixed(0)+'px';
-      s.style.color=cols[i%3]; s.style.fontWeight=sz>26?'700':'500'; s.title=w.count+' 次';
-      cloud.appendChild(s);
+
+// ---------- 屏蔽 ----------
+function blockUser(uid,nick){
+  if(!uid) return;
+  fetch('/api/block?user_id='+encodeURIComponent(uid)+'&nickname='+encodeURIComponent(nick||''),{method:'POST'});
+}
+function unblockUser(uid){ fetch('/api/unblock?user_id='+encodeURIComponent(uid),{method:'POST'}); }
+function loadBlocklist(){
+  fetch('/api/blocklist').then(r=>r.json()).then(list=>{
+    blocked=new Set(list.map(b=>b.user_id));
+    $('m_blocked').textContent=list.length; $('blkCnt').textContent=list.length?list.length+' 人':'';
+    const pool=$('pool');
+    if(!list.length){ pool.innerHTML='<span class="empty">暂无屏蔽用户</span>'; return; }
+    pool.innerHTML='';
+    list.forEach(b=>{
+      const el=document.createElement('div'); el.className='bu';
+      el.innerHTML='<span class="n"></span><button>解除</button>';
+      el.children[0].textContent=b.nickname||b.user_id;
+      el.children[0].title=b.user_id+'  屏蔽于 '+b.blocked_at;
+      el.children[1].onclick=()=>unblockUser(b.user_id);
+      pool.appendChild(el);
     });
   });
 }
-function loadUsers(){
-  fetch('/api/top_users').then(r=>r.json()).then(list=>{
-    const el=$('users');
-    if(!list.length){ el.innerHTML='<span class="empty">暂无数据</span>'; return; }
-    el.innerHTML=list.map(u=>'<div class="u"><span class="n"></span><span class="c">'+u.count+'</span></div>').join('');
-    el.querySelectorAll('.n').forEach((n,i)=>n.textContent=list[i].nickname);
-  });
-}
-function loadInitialDanmu(){
-  fetch('/api/danmu?limit=40').then(r=>r.json()).then(list=>{
-    if(list.length){ streamInited=false; list.forEach(d=>addRow('chat',d.nickname,d.content)); }
-  });
-}
 
-// ---- 在线人数折线图 ----
-const cv=$('chart'), ctx=cv.getContext('2d');
+// ---------- 指标 ----------
+function loadSummary(){
+  fetch('/api/summary').then(r=>r.json()).then(s=>{
+    counts.danmu=s.danmu; counts.enter=s.enter; counts.likes=s.likes; counts.gift=s.gift;
+    $('m_danmu').textContent=s.danmu; $('m_enter').textContent=s.enter;
+    $('m_likes').textContent=s.likes; $('m_gift').textContent=s.gift;
+    $('m_uu').textContent=s.distinct_users;
+    if(s.online!=null) $('m_online').textContent=s.online;
+    $('m_total').textContent=fmtWan(s.total_user);
+    const rt=s.rates||{};
+    $('s_danmu').innerHTML='速率 '+(rt.danmu_min||0)+' 条/分 · <span class="up">近5分 +'+(rt.danmu_5min||0)+'</span>';
+    $('s_enter').innerHTML='速率 '+(rt.enter_min||0)+' 人/分 · <span class="up">近5分 +'+(rt.enter_5min||0)+'</span>';
+    $('s_likes').innerHTML='<span class="up">近5分 +'+(rt.like_5min||0)+'</span>';
+    touch();
+  });
+}
+function loadSeries(){ fetch('/api/online_series').then(r=>r.json()).then(d=>{
+  series=d.map(p=>({ts:Date.parse(p.t.replace(' ','T')),v:p.v})).filter(p=>!isNaN(p.ts)); drawChart(); }); }
+function loadHotwords(){ fetch('/api/hotwords').then(r=>r.json()).then(list=>{
+  const cloud=$('cloud'); if(!list.length){ cloud.innerHTML='<span class="empty">暂无</span>'; return; }
+  const max=list[0].count,min=list[list.length-1].count,cols=['var(--accent)','var(--cyan)','var(--text)'];
+  cloud.innerHTML=''; list.slice(0,26).forEach((w,i)=>{ const sz=13+(max>min?(w.count-min)/(max-min)*22:10);
+    const s=document.createElement('span'); s.textContent=w.word; s.style.fontSize=sz.toFixed(0)+'px';
+    s.style.color=cols[i%3]; s.style.fontWeight=sz>24?'700':'500'; s.title=w.count+' 次'; cloud.appendChild(s); }); }); }
+function loadVoc(){ fetch('/api/voc').then(r=>r.json()).then(list=>{
+  const el=$('voc'); const max=Math.max(1,...list.map(v=>v.count));
+  const totRec=list.reduce((a,b)=>a+b.recent,0);
+  $('vocHint').innerHTML=totRec?('<span style="color:var(--amber)">近5分 '+totRec+' 条</span>'):'';
+  if(!list.some(v=>v.count>0)){ el.innerHTML='<span class="empty">暂无问题弹幕</span>'; return; }
+  el.innerHTML='';
+  list.forEach(v=>{ const row=document.createElement('div'); row.className='vr';
+    row.innerHTML='<span class="vn"></span><span class="vbar"><i style="width:'+(v.count/max*100)+'%"></i></span>'
+      +'<span class="vc">'+v.count+'</span><span class="vrec">'+(v.recent?'<span class="hot">+'+v.recent+'</span>':'')+'</span>';
+    row.children[0].textContent=v.category; el.appendChild(row); }); }); }
+function loadUsers(){ fetch('/api/top_users').then(r=>r.json()).then(list=>{
+  const el=$('users'); if(!list.length){ el.innerHTML='<span class="empty">暂无数据</span>'; return; }
+  el.innerHTML='';
+  list.forEach((u,i)=>{ const row=document.createElement('div'); row.className='u';
+    row.innerHTML='<span class="idx'+(i<3?' top':'')+'">'+(i+1)+'</span><span class="n"></span><span class="c">'+u.count+'</span>';
+    row.children[1].textContent=u.nickname; row.onclick=()=>openUser(u.user_id,u.nickname); el.appendChild(row); }); }); }
+function loadInitialDanmu(){ fetch('/api/danmu?limit=40').then(r=>r.json()).then(list=>{
+  if(list.length){ streamInited=false; list.forEach(d=>addRow('chat',{user_id:d.user_id,nick:d.nickname,txt:d.content})); } }); }
+
+// ---------- 用户历史弹幕 modal ----------
+function openUser(uid,nick){
+  curModalUser=uid; $('mUser').textContent=nick||uid; $('mCnt').textContent='';
+  $('mBody').innerHTML='<div class="empty">加载中…</div>'; $('mask').classList.add('show');
+  fetch('/api/user_danmu?user_id='+encodeURIComponent(uid)).then(r=>r.json()).then(d=>{
+    $('mCnt').textContent='共 '+d.total+' 条';
+    if(!d.danmu.length){ $('mBody').innerHTML='<div class="empty">该用户暂无弹幕</div>'; return; }
+    $('mBody').innerHTML='';
+    d.danmu.forEach(x=>{ const h=document.createElement('div'); h.className='h';
+      h.innerHTML='<span class="tm"></span><span class="c"></span>';
+      h.children[0].textContent=(x.created_at||'').slice(11); h.children[1].textContent=x.content;
+      $('mBody').appendChild(h); }); });
+}
+$('mClose').onclick=()=>$('mask').classList.remove('show');
+$('mask').onclick=e=>{ if(e.target===$('mask')) $('mask').classList.remove('show'); };
+$('mBan').onclick=()=>{ if(curModalUser){ blockUser(curModalUser,$('mUser').textContent); $('mask').classList.remove('show'); } };
+
+// ---------- 在线趋势图 ----------
+$('rangeBtns').querySelectorAll('button').forEach(b=>b.onclick=()=>{
+  $('rangeBtns').querySelectorAll('button').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on'); rangeMin=+b.dataset.m; drawChart(); });
+const cv=$('chart'),ctx=cv.getContext('2d');
 function drawChart(){
   const w=cv.clientWidth,h=cv.clientHeight,dpr=window.devicePixelRatio||1;
   cv.width=w*dpr; cv.height=h*dpr; ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,w,h);
-  const pad={l:40,r:12,t:12,b:20},iw=w-pad.l-pad.r,ih=h-pad.t-pad.b;
-  if(series.length<2){ ctx.fillStyle='#6c6c7c'; ctx.font='13px sans-serif';
+  const pad={l:42,r:14,t:14,b:22},iw=w-pad.l-pad.r,ih=h-pad.t-pad.b;
+  let data=series;
+  if(rangeMin>0){ const cut=Date.now()-rangeMin*60000; data=series.filter(p=>p.ts>=cut); }
+  if(data.length<2){ ctx.fillStyle='#63636f'; ctx.font='13px sans-serif';
     ctx.fillText('采集中,曲线累积中…',pad.l,pad.t+ih/2); return; }
-  const vals=series.map(p=>p.v); let mn=Math.min(...vals),mx=Math.max(...vals);
+  const vals=data.map(p=>p.v); let mn=Math.min(...vals),mx=Math.max(...vals);
   if(mx===mn){ mx=mn+1; mn=Math.max(0,mn-1); }
-  const x=i=>pad.l+iw*i/(series.length-1), y=v=>pad.t+ih*(1-(v-mn)/(mx-mn));
-  ctx.strokeStyle='#2c2c38'; ctx.fillStyle='#6c6c7c'; ctx.font='11px monospace'; ctx.lineWidth=1;
+  const x=i=>pad.l+iw*i/(data.length-1), y=v=>pad.t+ih*(1-(v-mn)/(mx-mn));
+  ctx.strokeStyle='#242430'; ctx.fillStyle='#63636f'; ctx.font='11px monospace'; ctx.lineWidth=1;
   for(let g=0;g<=3;g++){ const yy=pad.t+ih*g/3,val=Math.round(mx-(mx-mn)*g/3);
     ctx.beginPath(); ctx.moveTo(pad.l,yy); ctx.lineTo(w-pad.r,yy); ctx.stroke(); ctx.fillText(val,6,yy+4); }
+  // 时间轴两端
+  const ft=t=>new Date(t).toTimeString().slice(0,5);
+  ctx.fillText(ft(data[0].ts),pad.l,h-6); ctx.textAlign='right';
+  ctx.fillText(ft(data[data.length-1].ts),w-pad.r,h-6); ctx.textAlign='left';
   const grad=ctx.createLinearGradient(0,pad.t,0,pad.t+ih);
-  grad.addColorStop(0,'rgba(254,44,85,.28)'); grad.addColorStop(1,'rgba(254,44,85,0)');
-  ctx.beginPath(); ctx.moveTo(x(0),y(vals[0])); series.forEach((p,i)=>ctx.lineTo(x(i),y(p.v)));
-  ctx.lineTo(x(series.length-1),pad.t+ih); ctx.lineTo(x(0),pad.t+ih); ctx.closePath(); ctx.fillStyle=grad; ctx.fill();
-  ctx.beginPath(); ctx.moveTo(x(0),y(vals[0])); series.forEach((p,i)=>ctx.lineTo(x(i),y(p.v)));
+  grad.addColorStop(0,'rgba(254,44,85,.26)'); grad.addColorStop(1,'rgba(254,44,85,0)');
+  ctx.beginPath(); ctx.moveTo(x(0),y(vals[0])); data.forEach((p,i)=>ctx.lineTo(x(i),y(p.v)));
+  ctx.lineTo(x(data.length-1),pad.t+ih); ctx.lineTo(x(0),pad.t+ih); ctx.closePath(); ctx.fillStyle=grad; ctx.fill();
+  ctx.beginPath(); ctx.moveTo(x(0),y(vals[0])); data.forEach((p,i)=>ctx.lineTo(x(i),y(p.v)));
   ctx.strokeStyle='#fe2c55'; ctx.lineWidth=2; ctx.stroke();
-  const li=series.length-1; ctx.beginPath(); ctx.arc(x(li),y(vals[li]),3.5,0,7); ctx.fillStyle='#fe2c55'; ctx.fill();
+  // 峰值标注
+  let pi=0; vals.forEach((v,i)=>{ if(v>vals[pi]) pi=i; });
+  ctx.beginPath(); ctx.arc(x(pi),y(vals[pi]),3.5,0,7); ctx.fillStyle='var(--amber)'; ctx.fillStyle='#ffab2e'; ctx.fill();
+  ctx.fillStyle='#ffab2e'; ctx.font='11px monospace';
+  const lx=Math.min(Math.max(x(pi)-14,pad.l),w-pad.r-56);
+  ctx.fillText('峰值 '+vals[pi],lx,Math.max(y(vals[pi])-8,pad.t+10));
+  // 末点
+  const li=data.length-1; ctx.beginPath(); ctx.arc(x(li),y(vals[li]),3,0,7); ctx.fillStyle='#fe2c55'; ctx.fill();
+  $('s_online').textContent='峰值 '+Math.max(...series.map(p=>p.v));
 }
-window.addEventListener('resize', drawChart);
+window.addEventListener('resize',drawChart);
 
-// ---- WebSocket ----
+// ---------- WebSocket ----------
 let ws;
 function connect(){
   ws=new WebSocket('ws://'+location.host+'/ws');
-  ws.onopen=()=>$('dot').classList.add('on');
-  ws.onclose=()=>{ $('dot').classList.remove('on'); setTimeout(connect,2000); };
-  ws.onmessage=(ev)=>{
-    const m=JSON.parse(ev.data);
-    if(m.kind==='switch'){ resetAll(m.web_rid); }
-    else if(m.kind==='online'){ $('c_online').textContent=m.v;
-      series.push({t:m.t,v:m.v}); if(series.length>600)series.shift(); drawChart(); }
-    else if(m.kind==='chat'){ counts.danmu++; $('c_danmu').textContent=counts.danmu; addRow('chat',m.nickname,m.content); }
-    else if(m.kind==='enter'){ counts.enter++; $('c_enter').textContent=counts.enter; addRow('enter',m.nickname); }
-    else if(m.kind==='like'){ counts.likes++; $('c_likes').textContent=counts.likes; }
-    else if(m.kind==='gift'){ addRow('gift',m.nickname); }
-    else if(m.kind==='sys'){ addRow('sys',null,m.msg); }
+  ws.onopen=()=>{ $('dot').classList.add('on'); $('statTxt').textContent='采集中'; };
+  ws.onclose=()=>{ $('dot').classList.remove('on'); $('statTxt').textContent='断开,重连中'; setTimeout(connect,2000); };
+  ws.onmessage=ev=>{ const m=JSON.parse(ev.data); touch();
+    if(m.kind==='switch'){ resetAll(m.web_rid); loadBlocklist(); }
+    else if(m.kind==='online'){ $('m_online').textContent=m.v;
+      series.push({ts:Date.now(),v:m.v}); if(series.length>2000)series.shift(); drawChart(); }
+    else if(m.kind==='chat'){ if(blocked.has(m.user_id))return; counts.danmu++; $('m_danmu').textContent=counts.danmu;
+      addRow('chat',{user_id:m.user_id,nick:m.nickname,txt:m.content}); }
+    else if(m.kind==='enter'){ counts.enter++; $('m_enter').textContent=counts.enter; addRow('enter',{nick:m.nickname}); }
+    else if(m.kind==='like'){ counts.likes++; $('m_likes').textContent=counts.likes; }
+    else if(m.kind==='gift'){ counts.gift++; $('m_gift').textContent=counts.gift; addRow('gift',{nick:m.nickname}); }
+    else if(m.kind==='blocked'){ blocked.add(m.user_id); removeUserRows(m.user_id); loadBlocklist(); }
+    else if(m.kind==='unblocked'){ blocked.delete(m.user_id); loadBlocklist(); }
+    else if(m.kind==='sys'){ addRow('sys',{txt:m.msg}); }
   };
 }
 
-loadSummary(); loadSeries(); loadHotwords(); loadUsers(); loadInitialDanmu(); connect();
-setInterval(loadHotwords,6000); setInterval(loadUsers,8000); setInterval(loadSummary,15000);
+loadSummary(); loadSeries(); loadHotwords(); loadVoc(); loadUsers(); loadBlocklist(); loadInitialDanmu(); connect();
+setInterval(loadSummary,5000); setInterval(loadHotwords,6000); setInterval(loadVoc,5000);
+setInterval(loadUsers,7000);
 </script>
 </body>
 </html>

@@ -110,6 +110,10 @@ def parse_records(raw: bytes) -> list:
                 records.append({"type": "room_stat", "room_id": str(x.common.roomId),
                                 "online_count": x.displayValue,
                                 "ts": x.common.createTime})
+            elif m.method == "WebcastRoomUserSeqMessage":
+                x = dy.RoomUserSeqMessage(); x.ParseFromString(m.payload)
+                if x.totalUser:
+                    records.append({"type": "total_user", "total_user": x.totalUser})
         except Exception:
             continue
     return records
