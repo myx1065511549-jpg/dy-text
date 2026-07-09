@@ -7,5 +7,7 @@ grpcio-tools>=1.60        # 编译 douyin.proto -> _pb2.py(开发期用)
 
 # 说明:装完 playwright 后需执行 `python -m playwright install chromium` 下载浏览器内核
 
-# 后续模块(存储/服务/看板)按需补充:
-# fastapi、uvicorn 等
+# 服务与看板(已用)
+fastapi>=0.110
+uvicorn[standard]>=0.27   # 含 websockets,WebSocket 实时推送需要
+jieba>=0.42               # 弹幕分词做热词

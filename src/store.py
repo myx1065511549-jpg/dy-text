@@ -39,6 +39,7 @@ class Store:
     def __init__(self, path="danmu.db"):
         self.path = path
         self.conn = sqlite3.connect(path)
+        self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.executescript(SCHEMA)
         self.conn.commit()
 

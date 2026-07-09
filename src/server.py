@@ -1,0 +1,178 @@
+"""
+模块六:本地服务 + 实时推送。
+FastAPI 提供两个页面(实时弹幕流 / 看板)、REST 聚合接口、WebSocket 实时推送。
+启动时在后台线程跑浏览器采集,每条记录既入库又广播给前端。
+
+运行:
+  set DY_WEB_RID=<直播间web_rid> && python src/server.py
+  浏览器打开 http://127.0.0.1:8848/(弹幕流)、/dashboard(看板)
+"""
+import os
+import sys
+import json
+import time
+import asyncio
+import threading
+import sqlite3
+
+from fastapi import FastAPI, WebSocket
+from fastapi.responses import HTMLResponse
+import uvicorn
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from collector_browser import collect
+from parse import parse_records
+from store import Store
+import stats
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+WEB_DIR = os.path.join(HERE, "web")
+WEB_RID = os.environ.get("DY_WEB_RID", "292525714929")
+DB_PATH = os.environ.get("DY_DB", os.path.join(HERE, "danmu.db"))
+PORT = int(os.environ.get("DY_PORT", "8848"))
+
+app = FastAPI()
+clients = set()
+loop = None
+
+
+async def _broadcast(data: str):
+    dead = []
+    for ws in list(clients):
+        try:
+            await ws.send_text(data)
+        except Exception:
+            dead.append(ws)
+    for ws in dead:
+        clients.discard(ws)
+
+
+def push(obj: dict):
+    if loop is not None:
+        data = json.dumps(obj, ensure_ascii=False)
+        try:
+            asyncio.run_coroutine_threadsafe(_broadcast(data), loop)
+        except Exception:
+            pass
+
+
+def collector_thread():
+    store = Store(DB_PATH)
+    while True:
+        try:
+            def on_frame(raw):
+                recs = parse_records(raw)
+                for r in recs:
+                    store.save(r)
+                    t = r["type"]
+                    if t == "chat":
+                        push({"kind": "chat", "nickname": r.get("nickname"),
+                              "content": r.get("content")})
+                    elif t == "room_stat" and r.get("online_count") is not None:
+                        push({"kind": "online", "t": time.strftime("%H:%M:%S"),
+                              "v": r["online_count"]})
+                    elif t in ("enter", "like", "gift"):
+                        push({"kind": t, "nickname": r.get("nickname")})
+                if recs:
+                    store.commit()
+            collect(WEB_RID, on_frame, seconds=36000)
+        except Exception as e:
+            push({"kind": "sys", "msg": f"采集中断,5秒后重连: {str(e)[:80]}"})
+            time.sleep(5)
+
+
+@app.on_event("startup")
+async def _startup():
+    global loop
+    loop = asyncio.get_event_loop()
+    threading.Thread(target=collector_thread, daemon=True).start()
+
+
+def _page(name):
+    with open(os.path.join(WEB_DIR, name), encoding="utf-8") as f:
+        return HTMLResponse(f.read())
+
+
+@app.get("/")
+def index():
+    return _page("index.html")
+
+
+@app.get("/dashboard")
+def dashboard():
+    return _page("dashboard.html")
+
+
+def _conn():
+    return sqlite3.connect(DB_PATH)
+
+
+@app.get("/api/summary")
+def api_summary():
+    c = _conn()
+    try:
+        return stats.summary(c)
+    finally:
+        c.close()
+
+
+@app.get("/api/hotwords")
+def api_hotwords():
+    c = _conn()
+    try:
+        return stats.hotwords(c, 40)
+    finally:
+        c.close()
+
+
+@app.get("/api/online_series")
+def api_online_series():
+    c = _conn()
+    try:
+        return stats.online_series(c)
+    finally:
+        c.close()
+
+
+@app.get("/api/top_users")
+def api_top_users():
+    c = _conn()
+    try:
+        return stats.top_users(c, 10)
+    finally:
+        c.close()
+
+
+@app.get("/api/danmu")
+def api_danmu(limit: int = 60):
+    c = _conn()
+    try:
+        rows = c.execute(
+            "SELECT nickname, content, created_at FROM danmu "
+            "ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+        return [{"nickname": a, "content": b, "created_at": d}
+                for a, b, d in rows][::-1]
+    finally:
+        c.close()
+
+
+@app.get("/api/config")
+def api_config():
+    return {"web_rid": WEB_RID}
+
+
+@app.websocket("/ws")
+async def ws_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    clients.add(websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except Exception:
+        pass
+    finally:
+        clients.discard(websocket)
+
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="127.0.0.1", port=PORT, log_level="warning")

@@ -29,11 +29,21 @@
 - [x] 模块二:签名生成 `src/sign.py`(mini-racer 执行 webmssdk.js,frontierSign 可用)
 - [x] 模块三:连接采集 `src/collector_browser.py`(浏览器 hook,过 DEVICE_BLOCKED,已抓到真帧)
 - [x] 模块四:protobuf 解析 `src/parse.py` + `src/proto/douyin.proto`(真实弹幕已解出)
-- [ ] 模块五:存储(SQLite)
+- [x] 模块五:存储 `src/store.py` + 管道 `src/pipeline.py`(采集→解析→入库,真实弹幕持续入库,含 `tests/test_store.py`)
 - [ ] 模块六:实时弹幕流 + 看板前端
 - [ ] 模块七:打包为 Windows 程序
 
-阶段一(采集内核)已完成并用真实数据验证。详细计划见 `docs/plan-20260709.md`。
+阶段一(采集内核)、阶段二(存储)已完成并用真实数据验证。详细计划见 `docs/plan-20260709.md`。
+
+## 已跑通的采集入库管道
+
+```
+pip install -r requirements.txt
+python -m playwright install chromium
+python src/pipeline.py <web_rid> <秒数>
+# 例:python src/pipeline.py 292525714929 40
+# 浏览器采集 -> 解析 -> 写入 danmu.db,结果摘要见 pipeline_result.json
+```
 
 ## 运行(当前可跑的部分)
 

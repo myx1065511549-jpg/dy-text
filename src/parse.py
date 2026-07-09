@@ -105,6 +105,11 @@ def parse_records(raw: bytes) -> list:
                                 "user_id": str(x.user.id), "nickname": x.user.nickName,
                                 "gift_name": x.gift.name, "count": x.repeatCount,
                                 "ts": x.common.createTime})
+            elif m.method == "WebcastRoomStatsMessage":
+                x = dy.RoomStatsMessage(); x.ParseFromString(m.payload)
+                records.append({"type": "room_stat", "room_id": str(x.common.roomId),
+                                "online_count": x.displayValue,
+                                "ts": x.common.createTime})
         except Exception:
             continue
     return records

@@ -34,3 +34,16 @@
 - 会话期间 bash/powershell 终端输出持续间歇性编造(复读、乱入注释、假成功),但文件读写真实。全程靠"命令输出重定向到文件 + Glob/Read 核查"绕开,这是本环境下唯一可信的验证方式。
 
 下一步:阶段二 M5 存储(SQLite 落库),再阶段三 M6(FastAPI + 前端弹幕流/看板)。采集主链改为常驻:collector_browser 持续捕获帧 → parse 解析 → 入库 → 推前端。
+
+## 2026-07-09 14:25
+
+阶段二(存储)完成,真实数据入库验证通过。两次 git 提交(1addb22 阶段一、28562df 阶段二)。
+
+做了什么:
+- store.py:SQLite 分表(danmu/gift/enter/likes/room_stat),Store.save 按 type 分发,counts/recent_danmu 查询。
+- parse.py 加 parse_records(raw):把帧直接解成带 type 的规范化记录(含 room_id/user_id/ts),供入库。
+- collector_browser.py 加 collect(web_rid, on_frame, seconds):常驻采集,每帧回调。
+- pipeline.py:collect → parse_records → Store 一条链。实测 292525714929 跑 40s,59 帧、56 条记录入库(danmu 2、enter 52、likes 2),库里弹幕中文时间戳正确。
+- tests/test_store.py:存取往返单测,通过。
+
+下一步:阶段三 M6。FastAPI + WebSocket 实时推送 + 两个前端页面(实时弹幕流、看板)。管道改成把每条记录既入库又推给前端。看板指标:在线人数、弹幕速率、礼物榜、活跃用户、热词。

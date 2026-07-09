@@ -78,6 +78,24 @@ message Gift {
   uint64 diamondCount = 12;
 }
 
+message RoomUserSeqMessage {
+  Common common = 1;
+  int64 total = 3;
+  int64 totalUser = 7;
+  string totalUserStr = 8;
+  string totalPcStr = 9;
+  string totalStr = 10;
+}
+
+message RoomStatsMessage {
+  Common common = 1;
+  string displayShort = 2;
+  string displayMiddle = 3;
+  string displayLong = 4;
+  int64 displayValue = 5;
+  int64 total = 9;
+}
+
 message Common {
   string method = 1;
   uint64 msgId = 2;
