@@ -69,6 +69,47 @@ def parse_frame(raw: bytes) -> dict:
     return info
 
 
+def parse_records(raw: bytes) -> list:
+    """把一帧解成规范化记录列表(带 type 字段),直接供入库。"""
+    records = []
+    frame = dy.PushFrame()
+    frame.ParseFromString(raw)
+    if not frame.payload:
+        return records
+    resp = dy.Response()
+    try:
+        resp.ParseFromString(_maybe_gunzip(frame.payload))
+    except Exception:
+        return records
+    for m in resp.messagesList:
+        try:
+            if m.method == "WebcastChatMessage":
+                x = dy.ChatMessage(); x.ParseFromString(m.payload)
+                records.append({"type": "chat", "room_id": str(x.common.roomId),
+                                "user_id": str(x.user.id), "nickname": x.user.nickName,
+                                "gender": x.user.gender, "content": x.content,
+                                "ts": x.common.createTime})
+            elif m.method == "WebcastMemberMessage":
+                x = dy.MemberMessage(); x.ParseFromString(m.payload)
+                records.append({"type": "enter", "room_id": str(x.common.roomId),
+                                "user_id": str(x.user.id), "nickname": x.user.nickName,
+                                "ts": x.common.createTime})
+            elif m.method == "WebcastLikeMessage":
+                x = dy.LikeMessage(); x.ParseFromString(m.payload)
+                records.append({"type": "like", "room_id": str(x.common.roomId),
+                                "user_id": str(x.user.id), "nickname": x.user.nickName,
+                                "count": x.count, "ts": x.common.createTime})
+            elif m.method == "WebcastGiftMessage":
+                x = dy.GiftMessage(); x.ParseFromString(m.payload)
+                records.append({"type": "gift", "room_id": str(x.common.roomId),
+                                "user_id": str(x.user.id), "nickname": x.user.nickName,
+                                "gift_name": x.gift.name, "count": x.repeatCount,
+                                "ts": x.common.createTime})
+        except Exception:
+            continue
+    return records
+
+
 def main(path="browser_frames.b64"):
     out = {"frames": 0, "chat": [], "method_counts": {}, "errors": 0}
     if not os.path.exists(path):

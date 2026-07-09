@@ -53,6 +53,35 @@ HOOK_JS = r"""
 """
 
 
+def collect(web_rid: str, on_frame, seconds: int = 30, headless: bool = True):
+    """常驻采集:每收到一个二进制帧,调 on_frame(raw_bytes)。运行 seconds 秒后停。"""
+    def _on_ws_frame(b64: str):
+        try:
+            on_frame(base64.b64decode(b64))
+        except Exception:
+            pass
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(
+            headless=headless,
+            args=["--disable-blink-features=AutomationControlled",
+                  "--disable-features=IsolateOrigins,site-per-process"],
+        )
+        context = browser.new_context(
+            user_agent=UA, viewport={"width": 1280, "height": 800}, locale="zh-CN")
+        context.expose_function("__pyOnWsFrame", _on_ws_frame)
+        context.expose_function("__pyOnWsUrl", lambda u: None)
+        context.add_init_script(HOOK_JS)
+        page = context.new_page()
+        page.goto(f"https://live.douyin.com/{web_rid}",
+                  wait_until="domcontentloaded", timeout=30000)
+        t0 = time.time()
+        while time.time() - t0 < seconds:
+            page.wait_for_timeout(500)
+        context.close()
+        browser.close()
+
+
 def run_test(web_rid: str, seconds: int = 20, headless: bool = True,
              save_frames: int = 20) -> dict:
     out = {"stage": "start", "web_rid": web_rid, "headless": headless}

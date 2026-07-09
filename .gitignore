@@ -6,12 +6,16 @@ venv/
 
 # 抓取产物 / 中间文件 / 调试样例
 *.html
+*_result.json
 room_result.json
-parse_result.json
 *.b64
 *_out*.txt
+*_run.txt
 run_out.txt
 *.log
+
+# 数据库(采集数据不入库)
+*.db
 
 # 密钥与本地配置(禁止入库)
 .env
