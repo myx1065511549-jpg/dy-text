@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# 抓取产物 / 中间文件 / 调试样例
+*.html
+room_result.json
+parse_result.json
+*.b64
+*_out*.txt
+run_out.txt
+*.log
+
+# 密钥与本地配置(禁止入库)
+.env
+*.local.*
+config.local.*
+
+# 编辑器
+.vscode/
+.idea/

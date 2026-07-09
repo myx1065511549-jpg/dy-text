@@ -1,0 +1,93 @@
+syntax = "proto3";
+
+// 抖音直播 IM 协议(最小子集,只覆盖解析弹幕所需字段)。
+// 字段编号是抖音协议事实。protobuf 会跳过未定义字段,故这里只声明用得到的。
+
+message PushFrame {
+  uint64 seqId = 1;
+  uint64 logId = 2;
+  uint64 service = 3;
+  uint64 method = 4;
+  repeated HeadersList headersList = 5;
+  string payloadEncoding = 6;
+  string payloadType = 7;
+  bytes payload = 8;
+}
+
+message HeadersList {
+  string key = 1;
+  string value = 2;
+}
+
+message Response {
+  repeated Message messagesList = 1;
+  string cursor = 2;
+  uint64 fetchInterval = 3;
+  uint64 now = 4;
+  string internalExt = 5;
+  uint32 fetchType = 6;
+  map<string, string> routeParams = 7;
+  uint64 heartbeatDuration = 8;
+  bool needAck = 9;
+  string pushServer = 10;
+  string liveCursor = 11;
+  bool historyNoMore = 12;
+}
+
+message Message {
+  string method = 1;
+  bytes payload = 2;
+  int64 msgId = 3;
+  int32 msgType = 4;
+  int64 offset = 5;
+  bool needWrdsStore = 6;
+  int64 wrdsVersion = 7;
+  string wrdsSubKey = 8;
+}
+
+message ChatMessage {
+  Common common = 1;
+  User user = 2;
+  string content = 3;
+}
+
+message MemberMessage {
+  Common common = 1;
+  User user = 2;
+  uint64 memberCount = 3;
+}
+
+message LikeMessage {
+  Common common = 1;
+  uint64 count = 2;
+  uint64 total = 3;
+  User user = 5;
+}
+
+message GiftMessage {
+  Common common = 1;
+  uint64 giftId = 2;
+  uint64 comboCount = 6;
+  User user = 7;
+  uint64 repeatCount = 10;
+  Gift gift = 15;
+}
+
+message Gift {
+  string name = 16;
+  uint64 diamondCount = 12;
+}
+
+message Common {
+  string method = 1;
+  uint64 msgId = 2;
+  uint64 roomId = 3;
+  uint64 createTime = 4;
+}
+
+message User {
+  uint64 id = 1;
+  uint64 shortId = 2;
+  string nickName = 3;
+  uint32 gender = 4;
+}
