@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>直播数据看板</title>
+<style>
+  :root{
+    --bg:#141419; --bg2:#1c1c24; --bg3:#24242e;
+    --text:#ececf2; --text2:#a0a0b0; --muted:#6c6c7c;
+    --accent:#fe2c55; --cyan:#25f4ee; --border:#2c2c38;
+    --radius:14px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);min-height:100vh;
+    font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+  header{display:flex;align-items:center;gap:12px;padding:14px 24px;
+    background:var(--bg2);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:5}
+  header h1{font-size:16px;font-weight:600}
+  .rid{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--text2);
+    background:var(--bg3);padding:3px 8px;border-radius:6px}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--muted);transition:background .3s}
+  .dot.on{background:#28c76f;box-shadow:0 0 8px #28c76f}
+  .spacer{flex:1}
+  a.nav{color:var(--cyan);text-decoration:none;font-size:13px;
+    border:1px solid var(--border);padding:6px 12px;border-radius:8px}
+  a.nav:hover{background:var(--bg3)}
+  .wrap{padding:20px 24px;max-width:1280px;margin:0 auto}
+  .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:20px}
+  .card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
+  .card .label{font-size:13px;color:var(--text2);margin-bottom:8px}
+  .card .num{font-size:34px;font-weight:700;font-family:ui-monospace,Consolas,monospace;
+    line-height:1}
+  .card.live .num{color:var(--accent)}
+  .grid{display:grid;grid-template-columns:1.4fr 1fr;gap:16px}
+  .panel{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);
+    padding:18px;margin-bottom:16px}
+  .panel h2{font-size:14px;font-weight:600;margin-bottom:14px;display:flex;align-items:center;gap:8px}
+  .panel h2 .bar{width:3px;height:14px;background:var(--accent);border-radius:2px}
+  #chartWrap{position:relative}
+  canvas{width:100%;height:240px;display:block}
+  .cloud{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:baseline;min-height:120px}
+  .cloud span{line-height:1;cursor:default;transition:transform .15s}
+  .cloud span:hover{transform:scale(1.12)}
+  .users .u{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);font-size:14px}
+  .users .u:last-child{border:0}
+  .users .u .n{color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:70%}
+  .users .u .c{font-family:ui-monospace,monospace;color:var(--cyan)}
+  .mini{max-height:260px;overflow-y:auto}
+  .mini .m{padding:6px 0;font-size:13px;border-bottom:1px solid var(--border)}
+  .mini .m .mn{color:var(--cyan);margin-right:8px}
+  .mini .m .mt{color:var(--text)}
+  .empty{color:var(--muted);font-size:13px}
+  @media(max-width:900px){.cards{grid-template-columns:repeat(2,1fr)}.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <span class="dot" id="dot"></span>
+  <h1>直播数据看板</h1>
+  <span class="rid" id="rid">--</span>
+  <span class="spacer"></span>
+  <a class="nav" href="/">← 实时弹幕</a>
+</header>
+<div class="wrap">
+  <div class="cards">
+    <div class="card live"><div class="label">当前在线</div><div class="num" id="c_online">--</div></div>
+    <div class="card"><div class="label">弹幕总数</div><div class="num" id="c_danmu">0</div></div>
+    <div class="card"><div class="label">进场人次</div><div class="num" id="c_enter">0</div></div>
+    <div class="card"><div class="label">点赞</div><div class="num" id="c_likes">0</div></div>
+  </div>
+  <div class="grid">
+    <div>
+      <div class="panel">
+        <h2><span class="bar"></span>在线人数曲线</h2>
+        <div id="chartWrap"><canvas id="chart"></canvas></div>
+      </div>
+      <div class="panel">
+        <h2><span class="bar"></span>弹幕热词</h2>
+        <div class="cloud" id="cloud"><span class="empty">暂无弹幕热词</span></div>
+      </div>
+    </div>
+    <div>
+      <div class="panel">
+        <h2><span class="bar"></span>活跃用户榜</h2>
+        <div class="users" id="users"><span class="empty">暂无数据</span></div>
+      </div>
+      <div class="panel">
+        <h2><span class="bar"></span>最近弹幕</h2>
+        <div class="mini" id="mini"><span class="empty">等待弹幕…</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+let counts = {danmu:0, enter:0, likes:0};
+let series = []; // {t,v}
+
+fetch('/api/config').then(r=>r.json()).then(c=> $('rid').textContent = c.web_rid);
+
+function loadSummary(){
+  fetch('/api/summary').then(r=>r.json()).then(s=>{
+    counts.danmu=s.danmu; counts.enter=s.enter; counts.likes=s.likes;
+    $('c_danmu').textContent=s.danmu; $('c_enter').textContent=s.enter;
+    $('c_likes').textContent=s.likes;
+    if(s.online!=null) $('c_online').textContent=s.online;
+  });
+}
+function loadSeries(){
+  fetch('/api/online_series').then(r=>r.json()).then(d=>{ series=d; drawChart(); });
+}
+function loadHotwords(){
+  fetch('/api/hotwords').then(r=>r.json()).then(list=>{
+    const cloud=$('cloud');
+    if(!list.length){ cloud.innerHTML='<span class="empty">暂无弹幕热词</span>'; return; }
+    const max=list[0].count, min=list[list.length-1].count;
+    const cols=['var(--accent)','var(--cyan)','var(--text)'];
+    cloud.innerHTML='';
+    list.forEach((w,i)=>{
+      const sz = 14 + (max>min ? (w.count-min)/(max-min)*26 : 12);
+      const s=document.createElement('span');
+      s.textContent=w.word;
+      s.style.fontSize=sz.toFixed(0)+'px';
+      s.style.color=cols[i%3];
+      s.style.fontWeight = sz>26?'700':'500';
+      s.title=w.count+' 次';
+      cloud.appendChild(s);
+    });
+  });
+}
+function loadUsers(){
+  fetch('/api/top_users').then(r=>r.json()).then(list=>{
+    const el=$('users');
+    if(!list.length){ el.innerHTML='<span class="empty">暂无数据</span>'; return; }
+    el.innerHTML=list.map(u=>`<div class="u"><span class="n"></span><span class="c">${u.count}</span></div>`).join('');
+    el.querySelectorAll('.n').forEach((n,i)=> n.textContent=list[i].nickname);
+  });
+}
+function loadMini(){
+  fetch('/api/danmu?limit=30').then(r=>r.json()).then(list=>{
+    const el=$('mini');
+    if(!list.length){ el.innerHTML='<span class="empty">等待弹幕…</span>'; return; }
+    el.innerHTML=list.map(()=>`<div class="m"><span class="mn"></span><span class="mt"></span></div>`).join('');
+    const rows=el.querySelectorAll('.m');
+    list.forEach((d,i)=>{ rows[i].children[0].textContent=d.nickname; rows[i].children[1].textContent=d.content; });
+    el.scrollTop=el.scrollHeight;
+  });
+}
+
+// 手绘在线人数折线图
+const cv=$('chart'), ctx=cv.getContext('2d');
+function drawChart(){
+  const w=cv.clientWidth, h=cv.clientHeight, dpr=window.devicePixelRatio||1;
+  cv.width=w*dpr; cv.height=h*dpr; ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,w,h);
+  const pad={l:40,r:12,t:12,b:22};
+  const iw=w-pad.l-pad.r, ih=h-pad.t-pad.b;
+  if(series.length<2){ ctx.fillStyle='#6c6c7c'; ctx.font='13px sans-serif';
+    ctx.fillText('采集中,曲线累积中…', pad.l, pad.t+ih/2); return; }
+  const vals=series.map(p=>p.v);
+  let mn=Math.min(...vals), mx=Math.max(...vals);
+  if(mx===mn){ mx=mn+1; mn=Math.max(0,mn-1); }
+  const x=i=> pad.l + iw*i/(series.length-1);
+  const y=v=> pad.t + ih*(1-(v-mn)/(mx-mn));
+  // 网格 + y 轴刻度
+  ctx.strokeStyle='#2c2c38'; ctx.fillStyle='#6c6c7c'; ctx.font='11px monospace'; ctx.lineWidth=1;
+  for(let g=0; g<=3; g++){
+    const yy=pad.t+ih*g/3, val=Math.round(mx-(mx-mn)*g/3);
+    ctx.beginPath(); ctx.moveTo(pad.l,yy); ctx.lineTo(w-pad.r,yy); ctx.stroke();
+    ctx.fillText(val, 6, yy+4);
+  }
+  // 渐变填充
+  const grad=ctx.createLinearGradient(0,pad.t,0,pad.t+ih);
+  grad.addColorStop(0,'rgba(254,44,85,.28)'); grad.addColorStop(1,'rgba(254,44,85,0)');
+  ctx.beginPath(); ctx.moveTo(x(0),y(vals[0]));
+  series.forEach((p,i)=>ctx.lineTo(x(i),y(p.v)));
+  ctx.lineTo(x(series.length-1),pad.t+ih); ctx.lineTo(x(0),pad.t+ih); ctx.closePath();
+  ctx.fillStyle=grad; ctx.fill();
+  // 折线
+  ctx.beginPath(); ctx.moveTo(x(0),y(vals[0]));
+  series.forEach((p,i)=>ctx.lineTo(x(i),y(p.v)));
+  ctx.strokeStyle='#fe2c55'; ctx.lineWidth=2; ctx.stroke();
+  // 末点
+  const li=series.length-1;
+  ctx.beginPath(); ctx.arc(x(li),y(vals[li]),3.5,0,7); ctx.fillStyle='#fe2c55'; ctx.fill();
+}
+window.addEventListener('resize', drawChart);
+
+let ws;
+function connect(){
+  ws=new WebSocket(`ws://${location.host}/ws`);
+  ws.onopen=()=>$('dot').classList.add('on');
+  ws.onclose=()=>{ $('dot').classList.remove('on'); setTimeout(connect,2000); };
+  ws.onmessage=(ev)=>{
+    const m=JSON.parse(ev.data);
+    if(m.kind==='online'){
+      $('c_online').textContent=m.v;
+      series.push({t:m.t,v:m.v}); if(series.length>600)series.shift(); drawChart();
+    } else if(m.kind==='chat'){
+      counts.danmu++; $('c_danmu').textContent=counts.danmu;
+    } else if(m.kind==='enter'){
+      counts.enter++; $('c_enter').textContent=counts.enter;
+    } else if(m.kind==='like'){
+      counts.likes++; $('c_likes').textContent=counts.likes;
+    }
+  };
+}
+
+loadSummary(); loadSeries(); loadHotwords(); loadUsers(); loadMini(); connect();
+setInterval(loadHotwords, 6000);
+setInterval(loadUsers, 8000);
+setInterval(loadMini, 5000);
+setInterval(loadSummary, 15000);
+</script>
+</body>
+</html>
