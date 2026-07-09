@@ -107,6 +107,19 @@ def top_users(conn, limit=15):
     return [{"user_id": a, "nickname": b, "count": c} for a, b, c in rows]
 
 
+def word_danmu(conn, word, limit=200):
+    """某个热词的所有出现:内容 + 发言人 + 时间(排除屏蔽用户)。"""
+    rows = conn.execute(
+        f"SELECT nickname, content, created_at FROM danmu "
+        f"WHERE content LIKE ? AND {NB} ORDER BY id DESC LIMIT ?",
+        (f"%{word}%", limit)).fetchall()
+    return {
+        "word": word,
+        "total": len(rows),
+        "danmu": [{"nickname": a, "content": b, "created_at": c} for a, b, c in rows],
+    }
+
+
 def user_danmu(conn, user_id, limit=100):
     rows = conn.execute(
         "SELECT content, created_at FROM danmu WHERE user_id=? ORDER BY id DESC LIMIT ?",

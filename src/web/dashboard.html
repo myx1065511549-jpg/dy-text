@@ -56,6 +56,12 @@
   .panel h2 .r button{background:var(--bg3);border:1px solid var(--border);color:var(--text2);
     font-size:11px;padding:2px 8px;border-radius:6px;cursor:pointer}
   .panel h2 .r button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .panel h2.tabs{gap:18px}
+  .panel h2.tabs .tab{cursor:pointer;color:var(--muted);font-weight:600;display:inline-flex;align-items:center;gap:6px}
+  .panel h2.tabs .tab .bar{width:3px;height:13px;border-radius:2px;background:var(--muted)}
+  .panel h2.tabs .tab.on{color:var(--text)}
+  .panel h2.tabs .tab.on .bar{background:var(--accent)}
+  .metric .sub .l2{display:block;margin-top:2px}
   canvas{width:100%;height:210px;display:block}
 
   /* VOC */
@@ -188,10 +194,6 @@
         <h2><span class="bar"></span>VOC 问题弹幕队列 <span class="r" id="vocHint"></span></h2>
         <div class="voc" id="voc"><span class="empty">采集中…</span></div>
       </div>
-      <div class="panel">
-        <h2><span class="bar"></span>弹幕热词</h2>
-        <div class="cloud" id="cloud"><span class="empty">暂无</span></div>
-      </div>
     </div>
 
     <div class="col">
@@ -203,13 +205,22 @@
 
     <div class="col right">
       <div class="panel">
-        <h2><span class="bar"></span>发言榜</h2>
-        <div class="rank" id="users"><span class="empty">暂无数据</span></div>
-        <div class="hint">点击用户查看其历史弹幕</div>
+        <h2 class="tabs">
+          <span class="tab on" data-tab="users"><span class="bar"></span>发言榜</span>
+          <span class="tab" data-tab="pool"><span class="bar"></span>屏蔽池 <span id="blkCnt"></span></span>
+        </h2>
+        <div id="tab_users">
+          <div class="rank" id="users"><span class="empty">暂无数据</span></div>
+          <div class="hint">点击用户查看其历史弹幕</div>
+        </div>
+        <div id="tab_pool" style="display:none">
+          <div class="block-pool scroll" id="pool"><span class="empty">暂无屏蔽用户</span></div>
+          <div class="hint">点击用户看历史弹幕,点「解除」取消屏蔽</div>
+        </div>
       </div>
       <div class="panel">
-        <h2><span class="bar"></span>屏蔽池 <span class="r" id="blkCnt"></span></h2>
-        <div class="block-pool scroll" id="pool"><span class="empty">暂无屏蔽用户</span></div>
+        <h2><span class="bar"></span>热词榜 <span class="r">点击词看每次出现</span></h2>
+        <div class="rank" id="hotrank"><span class="empty">采集中…</span></div>
       </div>
     </div>
   </div>
@@ -300,8 +311,10 @@ function loadBlocklist(){
       const el=document.createElement('div'); el.className='bu';
       el.innerHTML='<span class="n"></span><button>解除</button>';
       el.children[0].textContent=b.nickname||b.user_id;
-      el.children[0].title=b.user_id+'  屏蔽于 '+b.blocked_at;
-      el.children[1].onclick=()=>unblockUser(b.user_id);
+      el.children[0].title='点击看历史 · '+b.user_id+'  屏蔽于 '+b.blocked_at;
+      el.children[0].style.cursor='pointer';
+      el.children[0].onclick=()=>openUser(b.user_id,b.nickname);
+      el.children[1].onclick=(e)=>{ e.stopPropagation(); unblockUser(b.user_id); };
       pool.appendChild(el);
     });
   });
@@ -317,20 +330,20 @@ function loadSummary(){
     if(s.online!=null) $('m_online').textContent=s.online;
     $('m_total').textContent=fmtWan(s.total_user);
     const rt=s.rates||{};
-    $('s_danmu').innerHTML='速率 '+(rt.danmu_min||0)+' 条/分 · <span class="up">近5分 +'+(rt.danmu_5min||0)+'</span>';
-    $('s_enter').innerHTML='速率 '+(rt.enter_min||0)+' 人/分 · <span class="up">近5分 +'+(rt.enter_5min||0)+'</span>';
-    $('s_likes').innerHTML='<span class="up">近5分 +'+(rt.like_5min||0)+'</span>';
+    $('s_danmu').innerHTML='速率 '+(rt.danmu_min||0)+' 条/分<span class="l2 up">近5分 +'+(rt.danmu_5min||0)+'</span>';
+    $('s_enter').innerHTML='速率 '+(rt.enter_min||0)+' 人/分<span class="l2 up">近5分 +'+(rt.enter_5min||0)+'</span>';
+    $('s_likes').innerHTML='点赞速率<span class="l2 up">近5分 +'+(rt.like_5min||0)+'</span>';
     touch();
   });
 }
 function loadSeries(){ fetch('/api/online_series').then(r=>r.json()).then(d=>{
   series=d.map(p=>({ts:Date.parse(p.t.replace(' ','T')),v:p.v})).filter(p=>!isNaN(p.ts)); drawChart(); }); }
-function loadHotwords(){ fetch('/api/hotwords').then(r=>r.json()).then(list=>{
-  const cloud=$('cloud'); if(!list.length){ cloud.innerHTML='<span class="empty">暂无</span>'; return; }
-  const max=list[0].count,min=list[list.length-1].count,cols=['var(--accent)','var(--cyan)','var(--text)'];
-  cloud.innerHTML=''; list.slice(0,26).forEach((w,i)=>{ const sz=13+(max>min?(w.count-min)/(max-min)*22:10);
-    const s=document.createElement('span'); s.textContent=w.word; s.style.fontSize=sz.toFixed(0)+'px';
-    s.style.color=cols[i%3]; s.style.fontWeight=sz>24?'700':'500'; s.title=w.count+' 次'; cloud.appendChild(s); }); }); }
+function loadHotrank(){ fetch('/api/hotwords').then(r=>r.json()).then(list=>{
+  const el=$('hotrank'); if(!list.length){ el.innerHTML='<span class="empty">暂无热词</span>'; return; }
+  el.innerHTML='';
+  list.slice(0,20).forEach((w,i)=>{ const row=document.createElement('div'); row.className='u';
+    row.innerHTML='<span class="idx'+(i<3?' top':'')+'">'+(i+1)+'</span><span class="n"></span><span class="c">'+w.count+'</span>';
+    row.children[1].textContent=w.word; row.onclick=()=>openWord(w.word); el.appendChild(row); }); }); }
 function loadVoc(){ fetch('/api/voc').then(r=>r.json()).then(list=>{
   const el=$('voc'); const max=Math.max(1,...list.map(v=>v.count));
   const totRec=list.reduce((a,b)=>a+b.recent,0);
@@ -351,17 +364,34 @@ function loadInitialDanmu(){ fetch('/api/danmu?limit=40').then(r=>r.json()).then
   if(list.length){ streamInited=false; list.forEach(d=>addRow('chat',{user_id:d.user_id,nick:d.nickname,txt:d.content})); } }); }
 
 // ---------- 用户历史弹幕 modal ----------
-function openUser(uid,nick){
-  curModalUser=uid; $('mUser').textContent=nick||uid; $('mCnt').textContent='';
-  $('mBody').innerHTML='<div class="empty">加载中…</div>'; $('mask').classList.add('show');
-  fetch('/api/user_danmu?user_id='+encodeURIComponent(uid)).then(r=>r.json()).then(d=>{
-    $('mCnt').textContent='共 '+d.total+' 条';
-    if(!d.danmu.length){ $('mBody').innerHTML='<div class="empty">该用户暂无弹幕</div>'; return; }
-    $('mBody').innerHTML='';
-    d.danmu.forEach(x=>{ const h=document.createElement('div'); h.className='h';
+function renderRows(list, withNick){
+  const body=$('mBody');
+  if(!list.length){ body.innerHTML='<div class="empty">暂无记录</div>'; return; }
+  body.innerHTML='';
+  list.forEach(x=>{ const h=document.createElement('div'); h.className='h';
+    if(withNick){
+      h.innerHTML='<span class="tm"></span><span class="mn" style="color:var(--cyan);flex-shrink:0;max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span><span class="c"></span>';
+      h.children[0].textContent=(x.created_at||'').slice(11);
+      h.children[1].textContent=x.nickname; h.children[2].textContent=x.content;
+    } else {
       h.innerHTML='<span class="tm"></span><span class="c"></span>';
       h.children[0].textContent=(x.created_at||'').slice(11); h.children[1].textContent=x.content;
-      $('mBody').appendChild(h); }); });
+    }
+    body.appendChild(h); });
+}
+function openUser(uid,nick){
+  curModalUser=uid; $('mUser').textContent=nick||uid; $('mCnt').textContent='';
+  $('mBan').style.display=''; $('mBody').innerHTML='<div class="empty">加载中…</div>';
+  $('mask').classList.add('show');
+  fetch('/api/user_danmu?user_id='+encodeURIComponent(uid)).then(r=>r.json()).then(d=>{
+    $('mCnt').textContent='共 '+d.total+' 条'; renderRows(d.danmu,false); });
+}
+function openWord(word){
+  curModalUser=null; $('mUser').textContent='热词: '+word; $('mCnt').textContent='';
+  $('mBan').style.display='none'; $('mBody').innerHTML='<div class="empty">加载中…</div>';
+  $('mask').classList.add('show');
+  fetch('/api/word_danmu?word='+encodeURIComponent(word)).then(r=>r.json()).then(d=>{
+    $('mCnt').textContent='共 '+d.total+' 次'; renderRows(d.danmu,true); });
 }
 $('mClose').onclick=()=>$('mask').classList.remove('show');
 $('mask').onclick=e=>{ if(e.target===$('mask')) $('mask').classList.remove('show'); };
@@ -371,6 +401,13 @@ $('mBan').onclick=()=>{ if(curModalUser){ blockUser(curModalUser,$('mUser').text
 $('rangeBtns').querySelectorAll('button').forEach(b=>b.onclick=()=>{
   $('rangeBtns').querySelectorAll('button').forEach(x=>x.classList.remove('on'));
   b.classList.add('on'); rangeMin=+b.dataset.m; drawChart(); });
+// 发言榜 / 屏蔽池 标签切换
+document.querySelectorAll('.panel h2.tabs .tab').forEach(t=>t.onclick=()=>{
+  document.querySelectorAll('.panel h2.tabs .tab').forEach(x=>x.classList.remove('on'));
+  t.classList.add('on');
+  $('tab_users').style.display=t.dataset.tab==='users'?'':'none';
+  $('tab_pool').style.display=t.dataset.tab==='pool'?'':'none';
+});
 const cv=$('chart'),ctx=cv.getContext('2d');
 function drawChart(){
   const w=cv.clientWidth,h=cv.clientHeight,dpr=window.devicePixelRatio||1;
@@ -429,8 +466,8 @@ function connect(){
   };
 }
 
-loadSummary(); loadSeries(); loadHotwords(); loadVoc(); loadUsers(); loadBlocklist(); loadInitialDanmu(); connect();
-setInterval(loadSummary,5000); setInterval(loadHotwords,6000); setInterval(loadVoc,5000);
+loadSummary(); loadSeries(); loadHotrank(); loadVoc(); loadUsers(); loadBlocklist(); loadInitialDanmu(); connect();
+setInterval(loadSummary,5000); setInterval(loadHotrank,6000); setInterval(loadVoc,5000);
 setInterval(loadUsers,7000);
 </script>
 </body>

@@ -203,6 +203,15 @@ def api_user_danmu(user_id: str, limit: int = 100):
         c.close()
 
 
+@app.get("/api/word_danmu")
+def api_word_danmu(word: str, limit: int = 200):
+    c = _conn()
+    try:
+        return stats.word_danmu(c, word, limit)
+    finally:
+        c.close()
+
+
 @app.post("/api/block")
 def api_block(user_id: str, nickname: str = ""):
     uid = (user_id or "").strip()
