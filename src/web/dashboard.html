@@ -14,44 +14,66 @@
   *{box-sizing:border-box;margin:0;padding:0}
   body{background:var(--bg);color:var(--text);min-height:100vh;
     font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
-  header{display:flex;align-items:center;gap:12px;padding:14px 24px;
-    background:var(--bg2);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:5}
+  header{display:flex;align-items:center;gap:12px;padding:12px 24px;
+    background:var(--bg2);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:5;flex-wrap:wrap}
   header h1{font-size:16px;font-weight:600}
   .rid{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--text2);
     background:var(--bg3);padding:3px 8px;border-radius:6px}
   .dot{width:8px;height:8px;border-radius:50%;background:var(--muted);transition:background .3s}
   .dot.on{background:#28c76f;box-shadow:0 0 8px #28c76f}
   .spacer{flex:1}
+  .switch{display:flex;align-items:center;gap:8px}
+  .switch label{font-size:13px;color:var(--text2)}
+  .switch input{background:var(--bg3);border:1px solid var(--border);color:var(--text);
+    padding:7px 10px;border-radius:8px;font-size:13px;width:150px;outline:none;
+    font-family:ui-monospace,monospace}
+  .switch input:focus{border-color:var(--accent)}
+  .switch button{background:var(--accent);color:#fff;border:none;padding:7px 16px;
+    border-radius:8px;font-size:13px;cursor:pointer;font-weight:600;transition:opacity .15s}
+  .switch button:hover{opacity:.88}
+  .switch button:active{transform:translateY(1px)}
   a.nav{color:var(--cyan);text-decoration:none;font-size:13px;
     border:1px solid var(--border);padding:6px 12px;border-radius:8px}
   a.nav:hover{background:var(--bg3)}
-  .wrap{padding:20px 24px;max-width:1280px;margin:0 auto}
-  .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:20px}
-  .card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
+  .wrap{padding:18px 24px;max-width:1400px;margin:0 auto}
+  .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:16px}
+  .card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:16px}
   .card .label{font-size:13px;color:var(--text2);margin-bottom:8px}
-  .card .num{font-size:34px;font-weight:700;font-family:ui-monospace,Consolas,monospace;
-    line-height:1}
+  .card .num{font-size:32px;font-weight:700;font-family:ui-monospace,Consolas,monospace;line-height:1}
   .card.live .num{color:var(--accent)}
-  .grid{display:grid;grid-template-columns:1.4fr 1fr;gap:16px}
+  .grid{display:grid;grid-template-columns:1.35fr 1fr;gap:16px;align-items:start}
   .panel{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);
-    padding:18px;margin-bottom:16px}
-  .panel h2{font-size:14px;font-weight:600;margin-bottom:14px;display:flex;align-items:center;gap:8px}
+    padding:16px;margin-bottom:16px}
+  .panel h2{font-size:14px;font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:8px}
   .panel h2 .bar{width:3px;height:14px;background:var(--accent);border-radius:2px}
-  #chartWrap{position:relative}
-  canvas{width:100%;height:240px;display:block}
-  .cloud{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:baseline;min-height:120px}
+  .panel h2 .cnt{margin-left:auto;font-size:12px;color:var(--muted);font-weight:400}
+  canvas{width:100%;height:230px;display:block}
+  .cloud{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:baseline;min-height:110px}
   .cloud span{line-height:1;cursor:default;transition:transform .15s}
   .cloud span:hover{transform:scale(1.12)}
   .users .u{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);font-size:14px}
   .users .u:last-child{border:0}
   .users .u .n{color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:70%}
   .users .u .c{font-family:ui-monospace,monospace;color:var(--cyan)}
-  .mini{max-height:260px;overflow-y:auto}
-  .mini .m{padding:6px 0;font-size:13px;border-bottom:1px solid var(--border)}
-  .mini .m .mn{color:var(--cyan);margin-right:8px}
-  .mini .m .mt{color:var(--text)}
+  /* 右栏:实时弹幕流 */
+  .stream-panel{position:sticky;top:74px;display:flex;flex-direction:column;
+    height:calc(100vh - 92px);margin-bottom:0}
+  #stream{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:6px;padding-right:4px}
+  .row{display:flex;gap:10px;align-items:baseline;padding:6px 8px;border-radius:8px;animation:in .22s ease}
+  .row:hover{background:var(--bg3)}
+  .row .nick{color:var(--cyan);font-size:13px;font-weight:500;flex-shrink:0;max-width:150px;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .row .txt{font-size:14px;line-height:1.4;word-break:break-word}
+  .row.enter .nick{color:var(--text2)}
+  .row.enter .txt{color:var(--muted);font-size:12px}
+  .row.sys .txt{color:var(--muted);font-size:12px}
+  .row.gift .txt{color:var(--accent)}
+  @keyframes in{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+  #stream::-webkit-scrollbar{width:7px}
+  #stream::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px}
   .empty{color:var(--muted);font-size:13px}
-  @media(max-width:900px){.cards{grid-template-columns:repeat(2,1fr)}.grid{grid-template-columns:1fr}}
+  @media(max-width:960px){.cards{grid-template-columns:repeat(2,1fr)}.grid{grid-template-columns:1fr}
+    .stream-panel{height:520px;position:static}}
 </style>
 </head>
 <body>
@@ -59,8 +81,13 @@
   <span class="dot" id="dot"></span>
   <h1>直播数据看板</h1>
   <span class="rid" id="rid">--</span>
+  <div class="switch">
+    <label>直播间</label>
+    <input id="roomInput" placeholder="输入 web_rid" spellcheck="false">
+    <button id="switchBtn">切换监控</button>
+  </div>
   <span class="spacer"></span>
-  <a class="nav" href="/">← 实时弹幕</a>
+  <a class="nav" href="/stream" target="_blank">独立弹幕流 ↗</a>
 </header>
 <div class="wrap">
   <div class="cards">
@@ -73,58 +100,101 @@
     <div>
       <div class="panel">
         <h2><span class="bar"></span>在线人数曲线</h2>
-        <div id="chartWrap"><canvas id="chart"></canvas></div>
+        <canvas id="chart"></canvas>
       </div>
       <div class="panel">
         <h2><span class="bar"></span>弹幕热词</h2>
         <div class="cloud" id="cloud"><span class="empty">暂无弹幕热词</span></div>
       </div>
-    </div>
-    <div>
       <div class="panel">
         <h2><span class="bar"></span>活跃用户榜</h2>
         <div class="users" id="users"><span class="empty">暂无数据</span></div>
       </div>
-      <div class="panel">
-        <h2><span class="bar"></span>最近弹幕</h2>
-        <div class="mini" id="mini"><span class="empty">等待弹幕…</span></div>
-      </div>
+    </div>
+    <div class="panel stream-panel">
+      <h2><span class="bar"></span>实时弹幕流 <span class="cnt" id="streamCnt"></span></h2>
+      <div id="stream"><span class="empty">等待弹幕…</span></div>
     </div>
   </div>
 </div>
 <script>
 const $ = id => document.getElementById(id);
 let counts = {danmu:0, enter:0, likes:0};
-let series = []; // {t,v}
+let series = [];
+let streamInited = false;
 
-fetch('/api/config').then(r=>r.json()).then(c=> $('rid').textContent = c.web_rid);
+function setRid(r){ $('rid').textContent = r; }
+
+fetch('/api/config').then(r=>r.json()).then(c=>{ setRid(c.web_rid); $('roomInput').value=c.web_rid; });
+
+// ---- 切换直播间 ----
+function doSwitch(){
+  const rid = $('roomInput').value.trim();
+  if(!rid) return;
+  fetch('/api/switch?web_rid='+encodeURIComponent(rid), {method:'POST'});
+  // 立即给反馈,真正清空在 WS 收到 switch 时统一做
+  addRow('sys', null, '正在切换到 '+rid+' …');
+}
+$('switchBtn').onclick = doSwitch;
+$('roomInput').addEventListener('keydown', e=>{ if(e.key==='Enter') doSwitch(); });
+
+function resetAll(rid){
+  setRid(rid); $('roomInput').value=rid;
+  counts={danmu:0,enter:0,likes:0};
+  $('c_danmu').textContent=0; $('c_enter').textContent=0; $('c_likes').textContent=0;
+  $('c_online').textContent='--';
+  series=[]; drawChart();
+  $('cloud').innerHTML='<span class="empty">采集新房间中…</span>';
+  $('users').innerHTML='<span class="empty">采集新房间中…</span>';
+  $('stream').innerHTML=''; streamInited=true;
+  addRow('sys', null, '已切换到 '+rid+',开始采集');
+}
+
+// ---- 弹幕流 ----
+const MAXROW=250; let rowCount=0;
+function addRow(kind, nick, txt){
+  const stream=$('stream');
+  if(!streamInited){ stream.innerHTML=''; streamInited=true; }
+  const row=document.createElement('div');
+  row.className='row '+kind;
+  if(kind==='chat'){
+    row.innerHTML='<span class="nick"></span><span class="txt"></span>';
+    row.children[0].textContent=nick||''; row.children[1].textContent=txt||'';
+  } else if(kind==='enter'){
+    row.innerHTML='<span class="nick"></span><span class="txt">来了</span>';
+    row.children[0].textContent=nick||'';
+  } else if(kind==='gift'){
+    row.innerHTML='<span class="nick"></span><span class="txt">送出礼物</span>';
+    row.children[0].textContent=nick||'';
+  } else if(kind==='sys'){
+    row.innerHTML='<span class="txt"></span>'; row.children[0].textContent=txt||'';
+  } else return;
+  const atBottom=stream.scrollHeight-stream.scrollTop-stream.clientHeight<90;
+  stream.appendChild(row);
+  while(stream.children.length>MAXROW) stream.removeChild(stream.firstChild);
+  if(atBottom) stream.scrollTop=stream.scrollHeight;
+  rowCount++; $('streamCnt').textContent=rowCount+' 条';
+}
 
 function loadSummary(){
   fetch('/api/summary').then(r=>r.json()).then(s=>{
     counts.danmu=s.danmu; counts.enter=s.enter; counts.likes=s.likes;
-    $('c_danmu').textContent=s.danmu; $('c_enter').textContent=s.enter;
-    $('c_likes').textContent=s.likes;
+    $('c_danmu').textContent=s.danmu; $('c_enter').textContent=s.enter; $('c_likes').textContent=s.likes;
     if(s.online!=null) $('c_online').textContent=s.online;
   });
 }
-function loadSeries(){
-  fetch('/api/online_series').then(r=>r.json()).then(d=>{ series=d; drawChart(); });
-}
+function loadSeries(){ fetch('/api/online_series').then(r=>r.json()).then(d=>{ series=d; drawChart(); }); }
 function loadHotwords(){
   fetch('/api/hotwords').then(r=>r.json()).then(list=>{
     const cloud=$('cloud');
     if(!list.length){ cloud.innerHTML='<span class="empty">暂无弹幕热词</span>'; return; }
-    const max=list[0].count, min=list[list.length-1].count;
-    const cols=['var(--accent)','var(--cyan)','var(--text)'];
+    const max=list[0].count,min=list[list.length-1].count,cols=['var(--accent)','var(--cyan)','var(--text)'];
     cloud.innerHTML='';
     list.forEach((w,i)=>{
-      const sz = 14 + (max>min ? (w.count-min)/(max-min)*26 : 12);
+      const sz=14+(max>min?(w.count-min)/(max-min)*26:12);
       const s=document.createElement('span');
-      s.textContent=w.word;
-      s.style.fontSize=sz.toFixed(0)+'px';
-      s.style.color=cols[i%3];
-      s.style.fontWeight = sz>26?'700':'500';
-      s.title=w.count+' 次';
+      s.textContent=w.word; s.style.fontSize=sz.toFixed(0)+'px';
+      s.style.color=cols[i%3]; s.style.fontWeight=sz>26?'700':'500'; s.title=w.count+' 次';
       cloud.appendChild(s);
     });
   });
@@ -133,85 +203,61 @@ function loadUsers(){
   fetch('/api/top_users').then(r=>r.json()).then(list=>{
     const el=$('users');
     if(!list.length){ el.innerHTML='<span class="empty">暂无数据</span>'; return; }
-    el.innerHTML=list.map(u=>`<div class="u"><span class="n"></span><span class="c">${u.count}</span></div>`).join('');
-    el.querySelectorAll('.n').forEach((n,i)=> n.textContent=list[i].nickname);
+    el.innerHTML=list.map(u=>'<div class="u"><span class="n"></span><span class="c">'+u.count+'</span></div>').join('');
+    el.querySelectorAll('.n').forEach((n,i)=>n.textContent=list[i].nickname);
   });
 }
-function loadMini(){
-  fetch('/api/danmu?limit=30').then(r=>r.json()).then(list=>{
-    const el=$('mini');
-    if(!list.length){ el.innerHTML='<span class="empty">等待弹幕…</span>'; return; }
-    el.innerHTML=list.map(()=>`<div class="m"><span class="mn"></span><span class="mt"></span></div>`).join('');
-    const rows=el.querySelectorAll('.m');
-    list.forEach((d,i)=>{ rows[i].children[0].textContent=d.nickname; rows[i].children[1].textContent=d.content; });
-    el.scrollTop=el.scrollHeight;
+function loadInitialDanmu(){
+  fetch('/api/danmu?limit=40').then(r=>r.json()).then(list=>{
+    if(list.length){ streamInited=false; list.forEach(d=>addRow('chat',d.nickname,d.content)); }
   });
 }
 
-// 手绘在线人数折线图
+// ---- 在线人数折线图 ----
 const cv=$('chart'), ctx=cv.getContext('2d');
 function drawChart(){
-  const w=cv.clientWidth, h=cv.clientHeight, dpr=window.devicePixelRatio||1;
-  cv.width=w*dpr; cv.height=h*dpr; ctx.setTransform(dpr,0,0,dpr,0,0);
-  ctx.clearRect(0,0,w,h);
-  const pad={l:40,r:12,t:12,b:22};
-  const iw=w-pad.l-pad.r, ih=h-pad.t-pad.b;
+  const w=cv.clientWidth,h=cv.clientHeight,dpr=window.devicePixelRatio||1;
+  cv.width=w*dpr; cv.height=h*dpr; ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,w,h);
+  const pad={l:40,r:12,t:12,b:20},iw=w-pad.l-pad.r,ih=h-pad.t-pad.b;
   if(series.length<2){ ctx.fillStyle='#6c6c7c'; ctx.font='13px sans-serif';
-    ctx.fillText('采集中,曲线累积中…', pad.l, pad.t+ih/2); return; }
-  const vals=series.map(p=>p.v);
-  let mn=Math.min(...vals), mx=Math.max(...vals);
+    ctx.fillText('采集中,曲线累积中…',pad.l,pad.t+ih/2); return; }
+  const vals=series.map(p=>p.v); let mn=Math.min(...vals),mx=Math.max(...vals);
   if(mx===mn){ mx=mn+1; mn=Math.max(0,mn-1); }
-  const x=i=> pad.l + iw*i/(series.length-1);
-  const y=v=> pad.t + ih*(1-(v-mn)/(mx-mn));
-  // 网格 + y 轴刻度
+  const x=i=>pad.l+iw*i/(series.length-1), y=v=>pad.t+ih*(1-(v-mn)/(mx-mn));
   ctx.strokeStyle='#2c2c38'; ctx.fillStyle='#6c6c7c'; ctx.font='11px monospace'; ctx.lineWidth=1;
-  for(let g=0; g<=3; g++){
-    const yy=pad.t+ih*g/3, val=Math.round(mx-(mx-mn)*g/3);
-    ctx.beginPath(); ctx.moveTo(pad.l,yy); ctx.lineTo(w-pad.r,yy); ctx.stroke();
-    ctx.fillText(val, 6, yy+4);
-  }
-  // 渐变填充
+  for(let g=0;g<=3;g++){ const yy=pad.t+ih*g/3,val=Math.round(mx-(mx-mn)*g/3);
+    ctx.beginPath(); ctx.moveTo(pad.l,yy); ctx.lineTo(w-pad.r,yy); ctx.stroke(); ctx.fillText(val,6,yy+4); }
   const grad=ctx.createLinearGradient(0,pad.t,0,pad.t+ih);
   grad.addColorStop(0,'rgba(254,44,85,.28)'); grad.addColorStop(1,'rgba(254,44,85,0)');
-  ctx.beginPath(); ctx.moveTo(x(0),y(vals[0]));
-  series.forEach((p,i)=>ctx.lineTo(x(i),y(p.v)));
-  ctx.lineTo(x(series.length-1),pad.t+ih); ctx.lineTo(x(0),pad.t+ih); ctx.closePath();
-  ctx.fillStyle=grad; ctx.fill();
-  // 折线
-  ctx.beginPath(); ctx.moveTo(x(0),y(vals[0]));
-  series.forEach((p,i)=>ctx.lineTo(x(i),y(p.v)));
+  ctx.beginPath(); ctx.moveTo(x(0),y(vals[0])); series.forEach((p,i)=>ctx.lineTo(x(i),y(p.v)));
+  ctx.lineTo(x(series.length-1),pad.t+ih); ctx.lineTo(x(0),pad.t+ih); ctx.closePath(); ctx.fillStyle=grad; ctx.fill();
+  ctx.beginPath(); ctx.moveTo(x(0),y(vals[0])); series.forEach((p,i)=>ctx.lineTo(x(i),y(p.v)));
   ctx.strokeStyle='#fe2c55'; ctx.lineWidth=2; ctx.stroke();
-  // 末点
-  const li=series.length-1;
-  ctx.beginPath(); ctx.arc(x(li),y(vals[li]),3.5,0,7); ctx.fillStyle='#fe2c55'; ctx.fill();
+  const li=series.length-1; ctx.beginPath(); ctx.arc(x(li),y(vals[li]),3.5,0,7); ctx.fillStyle='#fe2c55'; ctx.fill();
 }
 window.addEventListener('resize', drawChart);
 
+// ---- WebSocket ----
 let ws;
 function connect(){
-  ws=new WebSocket(`ws://${location.host}/ws`);
+  ws=new WebSocket('ws://'+location.host+'/ws');
   ws.onopen=()=>$('dot').classList.add('on');
   ws.onclose=()=>{ $('dot').classList.remove('on'); setTimeout(connect,2000); };
   ws.onmessage=(ev)=>{
     const m=JSON.parse(ev.data);
-    if(m.kind==='online'){
-      $('c_online').textContent=m.v;
-      series.push({t:m.t,v:m.v}); if(series.length>600)series.shift(); drawChart();
-    } else if(m.kind==='chat'){
-      counts.danmu++; $('c_danmu').textContent=counts.danmu;
-    } else if(m.kind==='enter'){
-      counts.enter++; $('c_enter').textContent=counts.enter;
-    } else if(m.kind==='like'){
-      counts.likes++; $('c_likes').textContent=counts.likes;
-    }
+    if(m.kind==='switch'){ resetAll(m.web_rid); }
+    else if(m.kind==='online'){ $('c_online').textContent=m.v;
+      series.push({t:m.t,v:m.v}); if(series.length>600)series.shift(); drawChart(); }
+    else if(m.kind==='chat'){ counts.danmu++; $('c_danmu').textContent=counts.danmu; addRow('chat',m.nickname,m.content); }
+    else if(m.kind==='enter'){ counts.enter++; $('c_enter').textContent=counts.enter; addRow('enter',m.nickname); }
+    else if(m.kind==='like'){ counts.likes++; $('c_likes').textContent=counts.likes; }
+    else if(m.kind==='gift'){ addRow('gift',m.nickname); }
+    else if(m.kind==='sys'){ addRow('sys',null,m.msg); }
   };
 }
 
-loadSummary(); loadSeries(); loadHotwords(); loadUsers(); loadMini(); connect();
-setInterval(loadHotwords, 6000);
-setInterval(loadUsers, 8000);
-setInterval(loadMini, 5000);
-setInterval(loadSummary, 15000);
+loadSummary(); loadSeries(); loadHotwords(); loadUsers(); loadInitialDanmu(); connect();
+setInterval(loadHotwords,6000); setInterval(loadUsers,8000); setInterval(loadSummary,15000);
 </script>
 </body>
 </html>

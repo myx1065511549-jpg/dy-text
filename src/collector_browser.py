@@ -53,8 +53,10 @@ HOOK_JS = r"""
 """
 
 
-def collect(web_rid: str, on_frame, seconds: int = 30, headless: bool = True):
-    """常驻采集:每收到一个二进制帧,调 on_frame(raw_bytes)。运行 seconds 秒后停。"""
+def collect(web_rid: str, on_frame, seconds: int = 30, headless: bool = True,
+            should_stop=None):
+    """常驻采集:每收到一个二进制帧,调 on_frame(raw_bytes)。
+    运行 seconds 秒后停;should_stop() 返回 True 时提前停(用于切换房间)。"""
     def _on_ws_frame(b64: str):
         try:
             on_frame(base64.b64decode(b64))
@@ -77,6 +79,8 @@ def collect(web_rid: str, on_frame, seconds: int = 30, headless: bool = True):
                   wait_until="domcontentloaded", timeout=30000)
         t0 = time.time()
         while time.time() - t0 < seconds:
+            if should_stop and should_stop():
+                break
             page.wait_for_timeout(500)
         context.close()
         browser.close()

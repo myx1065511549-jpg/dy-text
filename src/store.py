@@ -84,6 +84,12 @@ class Store:
     def commit(self):
         self.conn.commit()
 
+    def clear(self):
+        """清空所有表(切换直播间时,让统计对新房间从零开始)。"""
+        for t in ("danmu", "gift", "enter", "likes", "room_stat"):
+            self.conn.execute(f"DELETE FROM {t}")
+        self.conn.commit()
+
     def counts(self) -> dict:
         cur = self.conn.cursor()
         out = {}

@@ -34,6 +34,8 @@ PORT = int(os.environ.get("DY_PORT", "8848"))
 app = FastAPI()
 clients = set()
 loop = None
+current_rid = [WEB_RID]          # 当前监控的直播间(可运行时切换)
+switch_event = threading.Event()  # 置位表示要切房间,采集器据此停当前浏览器
 
 
 async def _broadcast(data: str):
@@ -58,25 +60,36 @@ def push(obj: dict):
 
 def collector_thread():
     store = Store(DB_PATH)
+    last_rid = None
     while True:
+        rid = current_rid[0]
+        if rid != last_rid:
+            store.clear()          # 换房间就清库,统计对新房间从零开始
+            last_rid = rid
+        switch_event.clear()
+
+        def on_frame(raw):
+            recs = parse_records(raw)
+            for r in recs:
+                store.save(r)
+                t = r["type"]
+                if t == "chat":
+                    push({"kind": "chat", "nickname": r.get("nickname"),
+                          "content": r.get("content")})
+                elif t == "room_stat" and r.get("online_count") is not None:
+                    push({"kind": "online", "t": time.strftime("%H:%M:%S"),
+                          "v": r["online_count"]})
+                elif t in ("enter", "like", "gift"):
+                    push({"kind": t, "nickname": r.get("nickname")})
+            if recs:
+                store.commit()
+
         try:
-            def on_frame(raw):
-                recs = parse_records(raw)
-                for r in recs:
-                    store.save(r)
-                    t = r["type"]
-                    if t == "chat":
-                        push({"kind": "chat", "nickname": r.get("nickname"),
-                              "content": r.get("content")})
-                    elif t == "room_stat" and r.get("online_count") is not None:
-                        push({"kind": "online", "t": time.strftime("%H:%M:%S"),
-                              "v": r["online_count"]})
-                    elif t in ("enter", "like", "gift"):
-                        push({"kind": t, "nickname": r.get("nickname")})
-                if recs:
-                    store.commit()
-            collect(WEB_RID, on_frame, seconds=36000)
+            collect(rid, on_frame, seconds=36000,
+                    should_stop=lambda: switch_event.is_set())
         except Exception as e:
+            if switch_event.is_set():
+                continue  # 切房间导致的中断,直接进下一轮
             push({"kind": "sys", "msg": f"采集中断,5秒后重连: {str(e)[:80]}"})
             time.sleep(5)
 
@@ -95,12 +108,17 @@ def _page(name):
 
 @app.get("/")
 def index():
-    return _page("index.html")
+    return _page("dashboard.html")
 
 
 @app.get("/dashboard")
 def dashboard():
     return _page("dashboard.html")
+
+
+@app.get("/stream")
+def stream():
+    return _page("index.html")
 
 
 def _conn():
@@ -158,7 +176,17 @@ def api_danmu(limit: int = 60):
 
 @app.get("/api/config")
 def api_config():
-    return {"web_rid": WEB_RID}
+    return {"web_rid": current_rid[0]}
+
+
+@app.post("/api/switch")
+def api_switch(web_rid: str):
+    rid = (web_rid or "").strip()
+    if rid:
+        current_rid[0] = rid
+        switch_event.set()   # 通知采集线程停当前浏览器、换新房间
+        push({"kind": "switch", "web_rid": rid})
+    return {"web_rid": current_rid[0]}
 
 
 @app.websocket("/ws")
