@@ -26,6 +26,11 @@ deps*.txt
 /build/
 /dist/
 /build_work/
+
+# 第三方二进制(douyinLive,按 docs 说明下载,不入库)
+/tools/
+worker.log
+/build_work/
 build_log*.txt
 
 # 密钥与本地配置(禁止入库)

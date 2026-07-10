@@ -6,13 +6,17 @@ from PyInstaller.utils.hooks import collect_all, collect_submodules
 SRC = os.path.join(os.getcwd(), "src")
 LOCALAPPDATA = os.environ["LOCALAPPDATA"]
 CHROMIUM = os.path.join(LOCALAPPDATA, "ms-playwright", "chromium-1228")
+HEADLESS = os.path.join(LOCALAPPDATA, "ms-playwright", "chromium_headless_shell-1228")
+DOUYINLIVE = os.path.join(os.getcwd(), "tools", "douyinLive")
 
 # 应用自带的资源
 datas = [
     (os.path.join(SRC, "web"), "web"),
     (os.path.join(SRC, "vendor"), "vendor"),
     (os.path.join(SRC, "proto"), "proto"),
-    (CHROMIUM, "ms-playwright/chromium-1228"),   # 内置浏览器内核
+    (CHROMIUM, "ms-playwright/chromium-1228"),                       # 完整 chromium(兜底)
+    (HEADLESS, "ms-playwright/chromium_headless_shell-1228"),        # 无头 shell(headless=True 用)
+    (DOUYINLIVE, "douyinLive"),                                      # 主源 douyinLive 服务
 ]
 binaries = []
 hiddenimports = ["douyin_pb2"] + collect_submodules("uvicorn")

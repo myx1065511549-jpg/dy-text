@@ -11,25 +11,26 @@ import datetime
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS danmu (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  room_id TEXT, user_id TEXT, nickname TEXT, gender INTEGER,
-  content TEXT, ts INTEGER, created_at TEXT
+  room_id TEXT, user_id TEXT, sec_uid TEXT, nickname TEXT, gender INTEGER,
+  level INTEGER, fans_level INTEGER, content TEXT, ts INTEGER, created_at TEXT,
+  source TEXT
 );
 CREATE TABLE IF NOT EXISTS gift (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   room_id TEXT, user_id TEXT, nickname TEXT,
-  gift_name TEXT, repeat_count INTEGER, ts INTEGER, created_at TEXT
+  gift_name TEXT, repeat_count INTEGER, ts INTEGER, created_at TEXT, source TEXT
 );
 CREATE TABLE IF NOT EXISTS enter (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  room_id TEXT, user_id TEXT, nickname TEXT, ts INTEGER, created_at TEXT
+  room_id TEXT, user_id TEXT, nickname TEXT, ts INTEGER, created_at TEXT, source TEXT
 );
 CREATE TABLE IF NOT EXISTS likes (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  room_id TEXT, user_id TEXT, nickname TEXT, count INTEGER, ts INTEGER, created_at TEXT
+  room_id TEXT, user_id TEXT, nickname TEXT, count INTEGER, ts INTEGER, created_at TEXT, source TEXT
 );
 CREATE TABLE IF NOT EXISTS room_stat (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  room_id TEXT, online_count INTEGER, ts INTEGER, created_at TEXT
+  room_id TEXT, online_count INTEGER, ts INTEGER, created_at TEXT, source TEXT
 );
 CREATE TABLE IF NOT EXISTS blocklist (
   user_id TEXT PRIMARY KEY, nickname TEXT, blocked_at TEXT
@@ -40,11 +41,24 @@ CREATE TABLE IF NOT EXISTS word_blocklist (
 CREATE TABLE IF NOT EXISTS meta (
   key TEXT PRIMARY KEY, value TEXT
 );
+"""
+
+# 索引在迁移补列之后再建(否则旧库上 danmu(source) 索引会因缺列报错)
+INDICES = """
 CREATE INDEX IF NOT EXISTS idx_danmu_room_ts ON danmu(room_id, ts);
 CREATE INDEX IF NOT EXISTS idx_danmu_user ON danmu(user_id);
 CREATE INDEX IF NOT EXISTS idx_danmu_created ON danmu(created_at);
+CREATE INDEX IF NOT EXISTS idx_danmu_source ON danmu(source);
 CREATE INDEX IF NOT EXISTS idx_enter_created ON enter(created_at);
 """
+
+# 给旧库补列(CREATE TABLE IF NOT EXISTS 不会给已存在的表加列)
+_MIGRATIONS = [
+    ("danmu", "sec_uid", "TEXT"), ("danmu", "level", "INTEGER"),
+    ("danmu", "fans_level", "INTEGER"), ("danmu", "source", "TEXT"),
+    ("gift", "source", "TEXT"), ("enter", "source", "TEXT"),
+    ("likes", "source", "TEXT"), ("room_stat", "source", "TEXT"),
+]
 
 # 切换直播间时要清空的数据表(屏蔽名单不清)
 _DATA_TABLES = ("danmu", "gift", "enter", "likes", "room_stat")
@@ -53,9 +67,15 @@ _DATA_TABLES = ("danmu", "gift", "enter", "likes", "room_stat")
 class Store:
     def __init__(self, path="danmu.db"):
         self.path = path
-        self.conn = sqlite3.connect(path)
+        self.conn = sqlite3.connect(path, check_same_thread=False)
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.executescript(SCHEMA)
+        for tbl, col, typ in _MIGRATIONS:
+            try:
+                self.conn.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} {typ}")
+            except Exception:
+                pass  # 列已存在
+        self.conn.executescript(INDICES)
         self.conn.commit()
 
     def _now(self):
@@ -64,34 +84,35 @@ class Store:
     def save(self, r: dict):
         t = r.get("type")
         now = self._now()
+        src = r.get("source")
         c = self.conn
         if t == "chat":
             c.execute(
-                "INSERT INTO danmu(room_id,user_id,nickname,gender,content,ts,created_at)"
-                " VALUES(?,?,?,?,?,?,?)",
-                (r.get("room_id"), r.get("user_id"), r.get("nickname"),
-                 r.get("gender"), r.get("content"), r.get("ts"), now))
+                "INSERT INTO danmu(room_id,user_id,sec_uid,nickname,gender,level,fans_level,"
+                "content,ts,created_at,source) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                (r.get("room_id"), r.get("user_id"), r.get("sec_uid"), r.get("nickname"),
+                 r.get("gender"), r.get("level"), r.get("fans_level"),
+                 r.get("content"), r.get("ts"), now, src))
         elif t == "gift":
             c.execute(
-                "INSERT INTO gift(room_id,user_id,nickname,gift_name,repeat_count,ts,created_at)"
-                " VALUES(?,?,?,?,?,?,?)",
+                "INSERT INTO gift(room_id,user_id,nickname,gift_name,repeat_count,ts,created_at,source)"
+                " VALUES(?,?,?,?,?,?,?,?)",
                 (r.get("room_id"), r.get("user_id"), r.get("nickname"),
-                 r.get("gift_name"), r.get("count"), r.get("ts"), now))
+                 r.get("gift_name"), r.get("count"), r.get("ts"), now, src))
         elif t == "enter":
             c.execute(
-                "INSERT INTO enter(room_id,user_id,nickname,ts,created_at) VALUES(?,?,?,?,?)",
-                (r.get("room_id"), r.get("user_id"), r.get("nickname"),
-                 r.get("ts"), now))
+                "INSERT INTO enter(room_id,user_id,nickname,ts,created_at,source) VALUES(?,?,?,?,?,?)",
+                (r.get("room_id"), r.get("user_id"), r.get("nickname"), r.get("ts"), now, src))
         elif t == "like":
             c.execute(
-                "INSERT INTO likes(room_id,user_id,nickname,count,ts,created_at)"
-                " VALUES(?,?,?,?,?,?)",
+                "INSERT INTO likes(room_id,user_id,nickname,count,ts,created_at,source)"
+                " VALUES(?,?,?,?,?,?,?)",
                 (r.get("room_id"), r.get("user_id"), r.get("nickname"),
-                 r.get("count"), r.get("ts"), now))
+                 r.get("count"), r.get("ts"), now, src))
         elif t == "room_stat":
             c.execute(
-                "INSERT INTO room_stat(room_id,online_count,ts,created_at) VALUES(?,?,?,?)",
-                (r.get("room_id"), r.get("online_count"), r.get("ts"), now))
+                "INSERT INTO room_stat(room_id,online_count,ts,created_at,source) VALUES(?,?,?,?,?)",
+                (r.get("room_id"), r.get("online_count"), r.get("ts"), now, src))
         else:
             return False
         return True

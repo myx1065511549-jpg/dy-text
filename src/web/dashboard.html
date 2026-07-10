@@ -23,6 +23,15 @@
   .dot{width:8px;height:8px;border-radius:50%;background:var(--muted);transition:.3s}
   .dot.on{background:var(--green);box-shadow:0 0 8px var(--green)}
   .stat-live{font-size:12px;color:var(--text2)}
+  .srcsw{display:flex;gap:6px;align-items:center}
+  .srcsw .si{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--text2);
+    background:var(--bg3);border:1px solid var(--border);padding:4px 9px;border-radius:7px;cursor:pointer}
+  .srcsw .si.on{color:#fff;border-color:var(--accent);background:rgba(254,44,85,.15)}
+  .srcsw .si .hd{width:7px;height:7px;border-radius:50%;background:var(--muted);transition:.3s}
+  .srcsw .si .hd.ok{background:var(--green);box-shadow:0 0 6px var(--green)}
+  .lv{display:inline-block;font-size:10px;font-weight:700;color:#fff;
+    background:linear-gradient(135deg,#ff8a3d,#fe2c55);padding:0 5px;border-radius:4px;
+    margin-right:5px;line-height:15px;flex-shrink:0;vertical-align:middle}
   .spacer{flex:1}
   .switch{display:flex;align-items:center;gap:7px}
   .switch input{background:var(--bg3);border:1px solid var(--border);color:var(--text);
@@ -160,6 +169,10 @@
   <span class="logo"><span class="b">▮▮</span> 抖音直播实时看板</span>
   <span class="rid" id="rid">--</span>
   <span class="dot" id="dot"></span><span class="stat-live" id="statTxt">连接中</span>
+  <div class="srcsw" id="srcsw">
+    <span class="si on" data-s="live"><i class="hd"></i>主源·实时</span>
+    <span class="si" data-s="browser"><i class="hd"></i>备源·浏览器</span>
+  </div>
   <span class="spacer"></span>
   <div class="switch">
     <input id="roomInput" placeholder="输入直播间 web_rid" spellcheck="false">
@@ -313,7 +326,10 @@ function addRow(kind,d){
   if(d.user_id) row.dataset.uid=d.user_id;
   if(kind==='chat'){
     row.innerHTML='<span class="nick"></span><span class="txt"></span><span class="blk">屏蔽</span>';
-    row.children[0].textContent=d.nick||''; row.children[1].textContent=d.txt||'';
+    const nk=row.children[0];
+    if(d.level) nk.innerHTML='<span class="lv">Lv'+d.level+'</span>';
+    nk.appendChild(document.createTextNode(d.nick||''));
+    row.children[1].textContent=d.txt||'';
     row.children[2].onclick=()=>blockUser(d.user_id,d.nick);
   } else if(kind==='enter'){
     row.innerHTML='<span class="nick"></span><span class="txt">来了</span>'; row.children[0].textContent=d.nick||'';
@@ -424,9 +440,12 @@ function loadUsers(){ fetch('/api/top_users').then(r=>r.json()).then(list=>{
   el.innerHTML='';
   list.forEach((u,i)=>{ const row=document.createElement('div'); row.className='u';
     row.innerHTML='<span class="idx'+(i<3?' top':'')+'">'+(i+1)+'</span><span class="n"></span><span class="c">'+u.count+'</span>';
-    row.children[1].textContent=u.nickname; row.onclick=()=>openUser(u.user_id,u.nickname); el.appendChild(row); }); }); }
+    const n=row.children[1];
+    if(u.level) n.innerHTML='<span class="lv">Lv'+u.level+'</span>';
+    n.appendChild(document.createTextNode(u.nickname));
+    row.onclick=()=>openUser(u.user_id,u.nickname); el.appendChild(row); }); }); }
 function loadInitialDanmu(){ fetch('/api/danmu?limit=40').then(r=>r.json()).then(list=>{
-  if(list.length){ streamInited=false; list.forEach(d=>addRow('chat',{user_id:d.user_id,nick:d.nickname,txt:d.content})); } }); }
+  if(list.length){ streamInited=false; list.forEach(d=>addRow('chat',{user_id:d.user_id,nick:d.nickname,txt:d.content,level:d.level})); } }); }
 
 // ---------- 用户历史弹幕 modal ----------
 function renderRows(list, withNick){
@@ -526,6 +545,28 @@ function syncHeights(){
 }
 window.addEventListener('resize',()=>{ drawChart(); syncHeights(); });
 
+// ---------- 数据源 ----------
+function loadSources(){
+  fetch('/api/sources').then(r=>r.json()).then(s=>{
+    document.querySelectorAll('#srcsw .si').forEach(el=>{
+      const k=el.dataset.s;
+      el.classList.toggle('on', s.active===k);
+      el.querySelector('.hd').classList.toggle('ok', !!(s[k] && s[k].ok));
+      if(k==='live') el.title = s.live.available ? (s.live.ok?'主源正常':'主源暂无数据') : 'douyinLive 不可用';
+    });
+  });
+}
+document.querySelectorAll('#srcsw .si').forEach(el=>el.onclick=()=>{
+  fetch('/api/switch_source?source='+el.dataset.s,{method:'POST'});
+});
+function reloadAll(){
+  counts={danmu:0,enter:0,likes:0,gift:0};
+  ['m_danmu','m_enter','m_likes','m_gift'].forEach(i=>$(i).textContent=0);
+  $('m_online').textContent='--'; series=[]; drawChart();
+  $('stream').innerHTML=''; streamInited=true;
+  loadSummary(); loadSeries(); loadHotrank(); loadVoc(); loadUsers(); loadInitialDanmu(); loadSources();
+}
+
 // ---------- WebSocket ----------
 let ws;
 function connect(){
@@ -537,21 +578,22 @@ function connect(){
     else if(m.kind==='online'){ $('m_online').textContent=m.v;
       series.push({ts:Date.now(),v:m.v}); if(series.length>2000)series.shift(); drawChart(); }
     else if(m.kind==='chat'){ if(blocked.has(m.user_id))return; counts.danmu++; $('m_danmu').textContent=counts.danmu;
-      addRow('chat',{user_id:m.user_id,nick:m.nickname,txt:m.content}); }
+      addRow('chat',{user_id:m.user_id,nick:m.nickname,txt:m.content,level:m.level}); }
     else if(m.kind==='enter'){ counts.enter++; $('m_enter').textContent=counts.enter; addRow('enter',{nick:m.nickname}); }
     else if(m.kind==='like'){ counts.likes++; $('m_likes').textContent=counts.likes; }
     else if(m.kind==='gift'){ counts.gift++; $('m_gift').textContent=counts.gift; addRow('gift',{nick:m.nickname}); }
     else if(m.kind==='blocked'){ blocked.add(m.user_id); removeUserRows(m.user_id); loadBlocklist(); loadUsers(); loadHotrank(); loadVoc(); }
     else if(m.kind==='unblocked'){ blocked.delete(m.user_id); loadBlocklist(); }
     else if(m.kind==='word_blocked'||m.kind==='word_unblocked'){ loadWordBlocklist(); loadHotrank(); loadVoc(); }
+    else if(m.kind==='source'){ addRow('sys',{txt:(m.auto?'主源失效,已自动切到':'已切换数据源:')+(m.source==='live'?'主源·实时':'备源·浏览器')}); reloadAll(); }
     else if(m.kind==='sys'){ addRow('sys',{txt:m.msg}); }
   };
 }
 
-loadSummary(); loadSeries(); loadHotrank(); loadVoc(); loadUsers(); loadBlocklist(); loadWordBlocklist(); loadInitialDanmu(); connect();
+loadSummary(); loadSeries(); loadHotrank(); loadVoc(); loadUsers(); loadBlocklist(); loadWordBlocklist(); loadInitialDanmu(); loadSources(); connect();
 setTimeout(syncHeights,300); setTimeout(syncHeights,1200); setInterval(syncHeights,4000);
 setInterval(loadSummary,5000); setInterval(loadHotrank,6000); setInterval(loadVoc,5000);
-setInterval(loadUsers,7000);
+setInterval(loadUsers,7000); setInterval(loadSources,4000);
 </script>
 </body>
 </html>

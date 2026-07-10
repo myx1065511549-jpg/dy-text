@@ -1,6 +1,6 @@
 """
-看板聚合统计:热词、VOC分类、速率、在线序列、独立用户、累计场观、用户历史。
-从 SQLite 只读查询,所有涉及用户的统计都排除屏蔽名单里的用户。
+看板聚合统计。支持双数据源:所有查询按当前数据源 source 过滤,
+避免两条采集链路同时入库造成重复计数。涉及用户的统计排除屏蔽名单。
 """
 import re
 import jieba
@@ -13,10 +13,9 @@ STOPWORDS = set(
     "你们 他们 自己 这个 那个 不是 就是 还是 这样 那样 这里 大家".split()
 )
 
-# 排除屏蔽用户的 SQL 片段(用于带 user_id 的表)
+# 排除屏蔽用户
 NB = "user_id NOT IN (SELECT user_id FROM blocklist)"
 
-# VOC 分类:类名 -> 关键词
 VOC_CATS = [
     ("价格优惠", ["多少钱", "价格", "优惠", "便宜", "贵", "折扣", "券", "打折", "降价", "返现", "几块", "多少"]),
     ("链接下单", ["链接", "怎么买", "下单", "小黄车", "购物车", "几号", "第几", "上链接", "拍下", "哪里买", "怎么拍", "拍了"]),
@@ -25,6 +24,11 @@ VOC_CATS = [
     ("质量效果", ["质量", "效果", "怎么样", "真的假的", "材质", "靠谱", "耐用", "好用吗", "有用吗"]),
     ("尺码型号", ["尺码", "型号", "多大", "尺寸", "码数", "大小", "身高", "体重", "多重", "适合"]),
 ]
+
+
+def _src(source):
+    """按数据源过滤的 SQL 片段 + 参数。"""
+    return (" AND source=?", [source]) if source else ("", [])
 
 
 def _blocked_words(conn):
@@ -38,12 +42,13 @@ def _cut_time(range_min):
             ).strftime("%Y-%m-%d %H:%M:%S")
 
 
-def hotwords(conn, limit=30):
+def hotwords(conn, limit=30, source=None):
+    sc, sp = _src(source)
     bw = _blocked_words(conn)
-    rows = conn.execute(f"SELECT content FROM danmu WHERE {NB}").fetchall()
+    rows = conn.execute(f"SELECT content FROM danmu WHERE {NB}{sc}", sp).fetchall()
     cnt = Counter()
     for (c,) in rows:
-        if not c or any(b in c for b in bw):   # 含屏蔽词的整条不计
+        if not c or any(b in c for b in bw):
             continue
         for w in jieba.cut(c):
             w = w.strip()
@@ -53,15 +58,16 @@ def hotwords(conn, limit=30):
     return [{"word": w, "count": n} for w, n in cnt.most_common(limit)]
 
 
-def voc(conn, range_min=0):
+def voc(conn, range_min=0, source=None):
+    sc, sp = _src(source)
     bw = _blocked_words(conn)
-    rows = conn.execute(f"SELECT content, created_at FROM danmu WHERE {NB}").fetchall()
+    rows = conn.execute(f"SELECT content, created_at FROM danmu WHERE {NB}{sc}", sp).fetchall()
     ago5 = (datetime.datetime.now() - datetime.timedelta(minutes=5)).strftime("%Y-%m-%d %H:%M:%S")
     cut = _cut_time(range_min)
     total = {c: 0 for c, _ in VOC_CATS}
     recent = {c: 0 for c, _ in VOC_CATS}
     for content, created in rows:
-        if not content or any(b in content for b in bw):   # 屏蔽词内容不计入
+        if not content or any(b in content for b in bw):
             continue
         if cut and (not created or created < cut):
             continue
@@ -75,15 +81,15 @@ def voc(conn, range_min=0):
     return out
 
 
-def voc_danmu(conn, category, range_min=0, limit=200):
-    """某个 VOC 分类的原声弹幕:内容 + 发言人 + 时间(排除屏蔽用户/词,可限时间范围)。"""
+def voc_danmu(conn, category, range_min=0, limit=200, source=None):
     kws = dict(VOC_CATS).get(category)
     if not kws:
         return {"category": category, "total": 0, "danmu": []}
+    sc, sp = _src(source)
     bw = _blocked_words(conn)
     cut = _cut_time(range_min)
     rows = conn.execute(
-        f"SELECT nickname, content, created_at FROM danmu WHERE {NB} ORDER BY id DESC").fetchall()
+        f"SELECT nickname, content, created_at FROM danmu WHERE {NB}{sc} ORDER BY id DESC", sp).fetchall()
     out = []
     for nick, content, created in rows:
         if not content or any(b in content for b in bw):
@@ -97,22 +103,34 @@ def voc_danmu(conn, category, range_min=0, limit=200):
     return {"category": category, "total": len(out), "danmu": out}
 
 
-def _count_since(conn, table, seconds):
-    thr = f"-{seconds} seconds"
+def word_danmu(conn, word, limit=200, source=None):
+    sc, sp = _src(source)
+    rows = conn.execute(
+        f"SELECT nickname, content, created_at FROM danmu WHERE content LIKE ? AND {NB}{sc} "
+        "ORDER BY id DESC LIMIT ?", [f"%{word}%"] + sp + [limit]).fetchall()
+    return {"word": word, "total": len(rows),
+            "danmu": [{"nickname": a, "content": b, "created_at": c} for a, b, c in rows]}
+
+
+def _count_since(conn, table, seconds, source=None):
+    sc, sp = _src(source)
     return conn.execute(
-        f"SELECT COUNT(*) FROM {table} WHERE created_at >= datetime('now','localtime',?) AND {NB}",
-        (thr,)).fetchone()[0]
+        f"SELECT COUNT(*) FROM {table} WHERE created_at >= datetime('now','localtime',?) "
+        f"AND {NB}{sc}", [f"-{seconds} seconds"] + sp).fetchone()[0]
 
 
-def summary(conn):
+def summary(conn, source=None):
+    sc, sp = _src(source)
+
     def cnt(t):
-        return conn.execute(f"SELECT COUNT(*) FROM {t} WHERE {NB}").fetchone()[0]
+        return conn.execute(f"SELECT COUNT(*) FROM {t} WHERE {NB}{sc}", sp).fetchone()[0]
+
     online = conn.execute(
-        "SELECT online_count FROM room_stat WHERE online_count IS NOT NULL "
-        "ORDER BY id DESC LIMIT 1").fetchone()
+        f"SELECT online_count FROM room_stat WHERE online_count IS NOT NULL{sc} "
+        "ORDER BY id DESC LIMIT 1", sp).fetchone()
     distinct_users = conn.execute(
-        f"SELECT COUNT(*) FROM (SELECT user_id FROM danmu WHERE {NB} "
-        f"UNION SELECT user_id FROM enter WHERE {NB})").fetchone()[0]
+        f"SELECT COUNT(*) FROM (SELECT user_id FROM danmu WHERE {NB}{sc} "
+        f"UNION SELECT user_id FROM enter WHERE {NB}{sc})", sp + sp).fetchone()[0]
     total_user = conn.execute("SELECT value FROM meta WHERE key='total_user'").fetchone()
     return {
         "danmu": cnt("danmu"), "gift": cnt("gift"),
@@ -121,50 +139,39 @@ def summary(conn):
         "total_user": int(total_user[0]) if total_user and total_user[0] else None,
         "distinct_users": distinct_users,
         "rates": {
-            "danmu_min": _count_since(conn, "danmu", 60),
-            "danmu_5min": _count_since(conn, "danmu", 300),
-            "enter_min": _count_since(conn, "enter", 60),
-            "enter_5min": _count_since(conn, "enter", 300),
-            "like_5min": _count_since(conn, "likes", 300),
+            "danmu_min": _count_since(conn, "danmu", 60, source),
+            "danmu_5min": _count_since(conn, "danmu", 300, source),
+            "enter_min": _count_since(conn, "enter", 60, source),
+            "enter_5min": _count_since(conn, "enter", 300, source),
+            "like_5min": _count_since(conn, "likes", 300, source),
         },
     }
 
 
-def online_series(conn, limit=600):
+def online_series(conn, limit=600, source=None):
+    sc, sp = _src(source)
     rows = conn.execute(
-        "SELECT created_at, online_count FROM room_stat "
-        "WHERE online_count IS NOT NULL ORDER BY id DESC LIMIT ?", (limit,)
-    ).fetchall()
+        f"SELECT created_at, online_count FROM room_stat "
+        f"WHERE online_count IS NOT NULL{sc} ORDER BY id DESC LIMIT ?", sp + [limit]).fetchall()
     return [{"t": a, "v": b} for a, b in rows[::-1]]
 
 
-def top_users(conn, limit=15):
+def top_users(conn, limit=15, source=None):
+    sc, sp = _src(source)
     rows = conn.execute(
-        f"SELECT user_id, nickname, COUNT(*) n FROM danmu WHERE nickname!='' AND {NB} "
-        "GROUP BY user_id ORDER BY n DESC LIMIT ?", (limit,)).fetchall()
-    return [{"user_id": a, "nickname": b, "count": c} for a, b, c in rows]
+        f"SELECT user_id, nickname, MAX(level) lv, COUNT(*) n FROM danmu "
+        f"WHERE nickname!='' AND {NB}{sc} GROUP BY user_id ORDER BY n DESC LIMIT ?",
+        sp + [limit]).fetchall()
+    return [{"user_id": a, "nickname": b, "level": c, "count": d} for a, b, c, d in rows]
 
 
-def word_danmu(conn, word, limit=200):
-    """某个热词的所有出现:内容 + 发言人 + 时间(排除屏蔽用户)。"""
+def user_danmu(conn, user_id, limit=100, source=None):
+    sc, sp = _src(source)
     rows = conn.execute(
-        f"SELECT nickname, content, created_at FROM danmu "
-        f"WHERE content LIKE ? AND {NB} ORDER BY id DESC LIMIT ?",
-        (f"%{word}%", limit)).fetchall()
-    return {
-        "word": word,
-        "total": len(rows),
-        "danmu": [{"nickname": a, "content": b, "created_at": c} for a, b, c in rows],
-    }
-
-
-def user_danmu(conn, user_id, limit=100):
-    rows = conn.execute(
-        "SELECT content, created_at FROM danmu WHERE user_id=? ORDER BY id DESC LIMIT ?",
-        (user_id, limit)).fetchall()
+        f"SELECT content, created_at FROM danmu WHERE user_id=?{sc} ORDER BY id DESC LIMIT ?",
+        [user_id] + sp + [limit]).fetchall()
     nick = conn.execute(
-        "SELECT nickname FROM danmu WHERE user_id=? ORDER BY id DESC LIMIT 1",
-        (user_id,)).fetchone()
+        "SELECT nickname FROM danmu WHERE user_id=? ORDER BY id DESC LIMIT 1", (user_id,)).fetchone()
     return {
         "user_id": user_id,
         "nickname": nick[0] if nick else "",

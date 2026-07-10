@@ -66,9 +66,8 @@ def collect(web_rid: str, on_frame, seconds: int = 30, headless: bool = True,
     with sync_playwright() as p:
         _args = ["--disable-blink-features=AutomationControlled",
                  "--disable-features=IsolateOrigins,site-per-process"]
-        if headless:
-            _args.append("--headless=new")  # 用完整 chromium 的新无头模式(chrome.exe)
-        browser = p.chromium.launch(headless=False, args=_args)
+        # 无头模式:任何会话(含非交互/后台)都能起,也适合打包
+        browser = p.chromium.launch(headless=True, args=_args)
         context = browser.new_context(
             user_agent=UA, viewport={"width": 1280, "height": 800}, locale="zh-CN")
         context.expose_function("__pyOnWsFrame", _on_ws_frame)
