@@ -113,3 +113,27 @@ GitHub:
 - 可执行包:D:\Claude\20260709-douyin-danmu\dist\douyin-dashboard\ (整个文件夹)
 
 下一步(如继续):优化包体积(playwright 驱动裁剪)、用户等级 Lv(需深挖 payGrade 子消息)、导出复盘、健康评分模块。
+
+## 2026-07-11 01:03
+
+按用户给的《抖音直播数据打通复刻说明》接入 douyinLive 作双数据源。
+
+验证结论:douyinLive(Go 本地服务,端口 1088,自己解析/签名/protobuf,推 JSON)数据粒度更细——带 webcastUid(真实稳定标识)、payGrade.level(用户等级,我们之前拿不到)、fansClub 粉丝团等级/状态、荣誉等级、头像。数字 user.id 两边都被抖音打码成 111111,真正唯一标识是 webcastUid。
+
+架构:
+- 主源 live:collector_live 起 douyinLive.exe 子进程 + 连 ws://127.0.0.1:1088/ws/{room},解 JSON。带用户等级。
+- 备源 browser:浏览器 hook。
+- 两源都采都存,记录打 source 标签('live'/'browser'),stats 全部按当前活跃源过滤避免重复计数;默认 live,health_monitor 主源失效自动切备源,前端可手动切。
+- store 加 source/level/fans_level/sec_uid 列 + 迁移;stats 每个函数加 source 参数;弹幕流/发言榜显示 Lv 徽章。
+
+踩坑(备源浏览器一路踩):
+- Playwright sync 在守护线程 + 主线程 asyncio,起有头浏览器 spawn UNKNOWN;根因是 headless=False(有头)在非交互会话起不来。改 headless=True(无头 shell)后任何会话都能起。
+- 之前用 headless=False+--headless=new 是为了强制用完整 chrome.exe(打包只打了它)。改无头后要把 chromium_headless_shell 也打进 exe。
+- 反复起停 chromium 在 Temp 堆了 114 个 playwright_ 临时 profile,把系统 spawn 搞挂;优雅关闭会自清,是暴力 kill 导致。
+- douyinLive 子进程继承 Playwright node 驱动管道句柄导致 EPIPE;Popen 加 close_fds=True 解决。
+- 最终把备源浏览器采集放独立子进程(server.py --browser-worker 模式),记录 POST 回 /internal/recs,彻底隔离 Playwright。
+- douyinLive 连上后要约 11 秒热身才推消息,且客户端断开就拆房间;采集器要连上稳定保持,不能频繁重连。
+
+打包:build.spec 增加 chromium_headless_shell-1228 和 tools/douyinLive;server.py frozen 下 --browser-worker 用 sys.executable 自身。tools/ 与 dist/ 不入库。
+
+GitHub:源码已推(ebd10d8)。第三方 douyinLive 二进制按 docs 说明下载,不入库。

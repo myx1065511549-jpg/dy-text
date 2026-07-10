@@ -11,15 +11,17 @@
   2. 实时看板(在线人数、弹幕速率、礼物榜、热词等)
 - 存储:所有消息持久化,支持事后查询分析
 
-## 技术路线
+## 技术路线(双数据源)
 
-采集走协议对接,不依赖任何第三方开源采集项目:
+两条采集链路并行,都采都存(打 `source` 标签做保底),默认展示主源,主源失效可一键切备源:
 
-- 直播间信息抓取:请求直播间页面,拿 `room_id` 和 `ttwid`
-- 签名:抖音连接需要 `signature` 参数,算法在抖音官方 `webmssdk.js` 里。我们用 mini-racer 执行这份官方JS 生成签名。已验证可用(`frontierSign` 产出格式正确的 16 位签名)
-- 连接(浏览器辅助):签名之外抖音还有设备信任门槛(DEVICE_BLOCKED),纯服务端连接被拦。改用 Playwright 起真实无头 Chromium 打开直播间,hook 住页面 WebSocket,把浏览器收到的原始帧回传给我们。连接与设备信任交给真实浏览器,过设备门槛
-- 解析:收到的帧是 protobuf 序列化 + gzip 压缩,逐层解出各类消息(我们自己的 `.proto` + 解析器)
-- 存储与呈现:消息入库,本地服务实时推送到前端页面
+**主源 live(更细粒度,默认)** — 基于 douyinLive(本地 Go 服务,端口 1088):它自己完成抖音直播页解析、签名、上游 WebSocket、protobuf 解包,推 JSON。我们的 `collector_live` 起它的子进程并连 `ws://127.0.0.1:1088/ws/{room}` 解析。比备源多带:用户等级(payGrade)、粉丝团、真实标识 webcastUid。
+
+**备源 browser(自研,兜底)** — 我们自己的链路:抓 `room_id`/`ttwid` → mini-racer 执行抖音官方 `webmssdk.js` 算签名 → Playwright 无头 Chromium 打开直播间、hook WebSocket 拿原始帧(过 DEVICE_BLOCKED 设备门槛)→ 自写 `.proto` 解 protobuf。作为独立子进程运行,隔离 Playwright。
+
+两源记录统一入 SQLite(带 `source`),所有统计按当前活跃源过滤避免重复计数;`health_monitor` 在主源失效时自动切备源。
+
+> 第三方依赖:主源用到的 `douyinLive.exe`(v2.0.24)不入库,按 `docs/` 里的《抖音直播数据打通复刻说明》下载到 `tools/douyinLive/`(校验 SHA256)。缺它时主源不可用,备源仍可独立工作。
 
 ## 当前进度
 
