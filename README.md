@@ -30,7 +30,7 @@
 - [x] 模块三:连接采集 `src/collector_browser.py`(浏览器 hook,过 DEVICE_BLOCKED,已抓到真帧)
 - [x] 模块四:protobuf 解析 `src/parse.py` + `src/proto/douyin.proto`(真实弹幕已解出)
 - [x] 模块五:存储 `src/store.py` + 管道 `src/pipeline.py`(采集→解析→入库,真实弹幕持续入库,含 `tests/test_store.py`)
-- [x] 模块六:服务 + 前端 `src/server.py` + `src/stats.py` + `src/web/`(FastAPI + WebSocket 实时推送,实时弹幕流页 + 看板页:在线人数曲线、弹幕热词、活跃用户榜)
+- [x] 模块六:服务 + 前端 `src/server.py` + `src/stats.py` + `src/web/`(FastAPI + WebSocket 实时推送。监控台看板:分组指标卡带速率/近5分增量、在线趋势带时间切换+峰值、VOC问题弹幕分类队列、发言榜/屏蔽池标签切换+点击看历史、热词榜点词看每次出现、实时弹幕流带屏蔽、累计场观/独立用户、运行时切换直播间)
 - [ ] 模块七:打包为 Windows 程序
 
 阶段一(采集内核)、阶段二(存储)、阶段三(服务+看板)已完成并用真实数据端到端验证(看板与弹幕流均已截图确认渲染)。详细计划见 `docs/plan-20260709.md`。
