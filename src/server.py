@@ -14,21 +14,37 @@ import time
 import asyncio
 import threading
 import sqlite3
+import webbrowser
+
+# ---- 打包(frozen)支持:内置 chromium、资源路径、可写数据库位置 ----
+_FROZEN = getattr(sys, "frozen", False)
+_BASE = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+
+
+def _res(rel):
+    return os.path.join(_BASE, rel)
+
+
+if _FROZEN:
+    # 指向内置的 ms-playwright,免装浏览器;必须在导入 playwright 前设置
+    os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", _res("ms-playwright"))
 
 from fastapi import FastAPI, WebSocket
 from fastapi.responses import HTMLResponse
 import uvicorn
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, _BASE)
+sys.path.insert(0, os.path.join(_BASE, "proto"))
 from collector_browser import collect
 from parse import parse_records
 from store import Store
 import stats
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-WEB_DIR = os.path.join(HERE, "web")
+WEB_DIR = _res("web")
 WEB_RID = os.environ.get("DY_WEB_RID", "292525714929")
-DB_PATH = os.environ.get("DY_DB", os.path.join(HERE, "danmu.db"))
+# 数据库写到 exe 同目录(打包后 _MEIPASS 是只读临时目录,不能写)
+_DATA_DIR = os.path.dirname(sys.executable) if _FROZEN else _BASE
+DB_PATH = os.environ.get("DY_DB", os.path.join(_DATA_DIR, "danmu.db"))
 PORT = int(os.environ.get("DY_PORT", "8848"))
 
 app = FastAPI()
@@ -335,4 +351,6 @@ async def ws_endpoint(websocket: WebSocket):
 
 
 if __name__ == "__main__":
+    threading.Timer(2.0, lambda: webbrowser.open(f"http://127.0.0.1:{PORT}/")).start()
+    print(f"抖音直播看板已启动,请在浏览器打开 http://127.0.0.1:{PORT}/")
     uvicorn.run(app, host="127.0.0.1", port=PORT, log_level="warning")

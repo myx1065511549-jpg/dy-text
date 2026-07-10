@@ -64,11 +64,11 @@ def collect(web_rid: str, on_frame, seconds: int = 30, headless: bool = True,
             pass
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(
-            headless=headless,
-            args=["--disable-blink-features=AutomationControlled",
-                  "--disable-features=IsolateOrigins,site-per-process"],
-        )
+        _args = ["--disable-blink-features=AutomationControlled",
+                 "--disable-features=IsolateOrigins,site-per-process"]
+        if headless:
+            _args.append("--headless=new")  # 用完整 chromium 的新无头模式(chrome.exe)
+        browser = p.chromium.launch(headless=False, args=_args)
         context = browser.new_context(
             user_agent=UA, viewport={"width": 1280, "height": 800}, locale="zh-CN")
         context.expose_function("__pyOnWsFrame", _on_ws_frame)
