@@ -412,8 +412,12 @@ function loadWordBlocklist(){ fetch('/api/word_blocklist').then(r=>r.json()).the
   pool.innerHTML='';
   list.forEach(b=>{ const el=document.createElement('div'); el.className='bu word';
     el.innerHTML='<span class="n"></span><button>解除</button>';
-    el.children[0].textContent=b.word; el.children[0].title='屏蔽于 '+b.blocked_at;
-    el.children[1].onclick=()=>unblockWord(b.word); pool.appendChild(el); }); }); }
+    el.children[0].textContent=b.word;
+    el.children[0].title='点击看原声 · 屏蔽于 '+b.blocked_at;
+    el.children[0].style.cursor='pointer';
+    el.children[0].onclick=()=>openWord(b.word);
+    el.children[1].onclick=(e)=>{ e.stopPropagation(); unblockWord(b.word); };
+    pool.appendChild(el); }); }); }
 function addWord(){ const w=$('wordInput').value.trim(); if(!w) return; blockWord(w); $('wordInput').value=''; }
 function loadUsers(){ fetch('/api/top_users').then(r=>r.json()).then(list=>{
   const el=$('users'); if(!list.length){ el.innerHTML='<span class="empty">暂无数据</span>'; return; }
