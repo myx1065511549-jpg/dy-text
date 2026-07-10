@@ -31,9 +31,17 @@
 - [x] 模块四:protobuf 解析 `src/parse.py` + `src/proto/douyin.proto`(真实弹幕已解出)
 - [x] 模块五:存储 `src/store.py` + 管道 `src/pipeline.py`(采集→解析→入库,真实弹幕持续入库,含 `tests/test_store.py`)
 - [x] 模块六:服务 + 前端 `src/server.py` + `src/stats.py` + `src/web/`(FastAPI + WebSocket 实时推送。监控台看板:分组指标卡带速率/近5分增量、在线趋势带时间切换+峰值、VOC问题弹幕分类队列、发言榜/屏蔽池标签切换+点击看历史、热词榜点词看每次出现、实时弹幕流带屏蔽、累计场观/独立用户、运行时切换直播间)
-- [ ] 模块七:打包为 Windows 程序
+- [x] 模块七:打包为 Windows 程序(PyInstaller `build.spec`,onedir 内置 chromium,双击 exe 即用)
 
-阶段一(采集内核)、阶段二(存储)、阶段三(服务+看板)已完成并用真实数据端到端验证(看板与弹幕流均已截图确认渲染)。详细计划见 `docs/plan-20260709.md`。
+阶段一到阶段四全部完成并用真实数据端到端验证。打包产物为 `dist/douyin-dashboard/`(约 652MB,含内置浏览器,不入库)。详细计划见 `docs/plan-20260709.md`。
+
+## 打包(生成 Windows exe)
+
+```
+pip install pyinstaller
+python -m PyInstaller build.spec --noconfirm --distpath dist --workpath build_work
+# 产物:dist/douyin-dashboard/,双击 douyin-dashboard.exe 启动,自动开浏览器
+```
 
 ## 运行
 

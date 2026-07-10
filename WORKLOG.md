@@ -90,3 +90,26 @@ store.py 加 blocklist、meta 表,clear() 不清屏蔽名单。
 踩坑:改 .gitignore 的 *.html 差点又误伤前端(这次没动 html 规则,安全)。用户等级字段需更深逆向,记着以后要做就挖 payGrade/fansClub 子消息。
 
 下一步:用户确认设计定稿后进阶段四打包 exe。
+
+## 2026-07-10 16:37
+
+阶段四(打包 exe)完成,源码已推 GitHub。交付第一版。
+
+看板又加了几轮微调(均已提交):热词榜屏蔽词+屏蔽词池+手动输入、VOC 点击看原声+时间筛选+屏蔽联动、屏蔽词点击看原声、发言榜/屏蔽池合并标签、卡片近5分另起一行、热词榜、全局细滚轴、布局改为以 VOC 底边为共用基准(JS 同步中间/右列高度,三栏底边对齐、切标签不跳)。
+
+打包:
+- PyInstaller onedir,build.spec。datas 含 web/vendor/proto + 内置 chromium-1228;collect_all 收 playwright/jieba/py_mini_racer/uvicorn/fastapi 等;excludes 排除 Anaconda 带的 matplotlib/PyQt5/numpy/sphinx 等无关大包。
+- server.py 加 frozen 支持:_MEIPASS 资源路径、PLAYWRIGHT_BROWSERS_PATH 指向内置 chromium、DB 写到 exe 同目录、启动自动开浏览器。
+- 采集器踩坑:headless=True 实际用 chrome-headless-shell(未打包),报 Executable doesn't exist;改成 headless=False + args --headless=new,用已打包的完整 chromium chrome.exe。开发验证抓 27 帧,打包后 exe 实测抓到真实弹幕(danmu/enter/online/累计场观都有)。
+- 第一次瘦身重打包失败:旧 dist/_internal 被 chrome 子进程占用,rm 失败导致 && 短路 PyInstaller 没跑;彻底杀进程再删再打。
+- 产物 dist/douyin-dashboard/ 约 652MB(从 1.5GB 瘦到 652MB),含 douyin-dashboard.exe(13.8MB)+ _internal + 使用说明.txt。整个文件夹拷走即可在别的 Win 机运行。
+
+GitHub:
+- 远程 https://github.com/myx1065511549-jpg/dy-text.git,git push -u origin main 成功(GCM 系统凭证,推送时浏览器登录)。
+- dist/build_work 及 chromium 不入库(.gitignore),GitHub 只放源码。
+
+交付物:
+- 源码:https://github.com/myx1065511549-jpg/dy-text
+- 可执行包:D:\Claude\20260709-douyin-danmu\dist\douyin-dashboard\ (整个文件夹)
+
+下一步(如继续):优化包体积(playwright 驱动裁剪)、用户等级 Lv(需深挖 payGrade 子消息)、导出复盘、健康评分模块。
