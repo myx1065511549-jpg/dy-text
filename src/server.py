@@ -186,10 +186,59 @@ def api_danmu(limit: int = 60):
 
 
 @app.get("/api/voc")
-def api_voc():
+def api_voc(range: int = 0):
     c = _conn()
     try:
-        return stats.voc(c)
+        return stats.voc(c, range)
+    finally:
+        c.close()
+
+
+@app.get("/api/voc_danmu")
+def api_voc_danmu(category: str, range: int = 0, limit: int = 200):
+    c = _conn()
+    try:
+        return stats.voc_danmu(c, category, range, limit)
+    finally:
+        c.close()
+
+
+@app.post("/api/block_word")
+def api_block_word(word: str):
+    w = (word or "").strip()
+    if not w:
+        return {"ok": False}
+    c = _conn()
+    try:
+        c.execute("INSERT OR IGNORE INTO word_blocklist(word,blocked_at) "
+                  "VALUES(?,datetime('now','localtime'))", (w,))
+        c.commit()
+    finally:
+        c.close()
+    push({"kind": "word_blocked", "word": w})
+    return {"ok": True}
+
+
+@app.post("/api/unblock_word")
+def api_unblock_word(word: str):
+    w = (word or "").strip()
+    c = _conn()
+    try:
+        c.execute("DELETE FROM word_blocklist WHERE word=?", (w,))
+        c.commit()
+    finally:
+        c.close()
+    push({"kind": "word_unblocked", "word": w})
+    return {"ok": True}
+
+
+@app.get("/api/word_blocklist")
+def api_word_blocklist():
+    c = _conn()
+    try:
+        rows = c.execute(
+            "SELECT word, blocked_at FROM word_blocklist ORDER BY blocked_at DESC").fetchall()
+        return [{"word": a, "blocked_at": b} for a, b in rows]
     finally:
         c.close()
 

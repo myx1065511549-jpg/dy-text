@@ -27,27 +27,43 @@ VOC_CATS = [
 ]
 
 
+def _blocked_words(conn):
+    return {r[0] for r in conn.execute("SELECT word FROM word_blocklist").fetchall()}
+
+
+def _cut_time(range_min):
+    if not range_min or range_min <= 0:
+        return None
+    return (datetime.datetime.now() - datetime.timedelta(minutes=range_min)
+            ).strftime("%Y-%m-%d %H:%M:%S")
+
+
 def hotwords(conn, limit=30):
+    bw = _blocked_words(conn)
     rows = conn.execute(f"SELECT content FROM danmu WHERE {NB}").fetchall()
     cnt = Counter()
     for (c,) in rows:
-        if not c:
+        if not c or any(b in c for b in bw):   # 含屏蔽词的整条不计
             continue
         for w in jieba.cut(c):
             w = w.strip()
-            if len(w) < 2 or w in STOPWORDS or re.fullmatch(r"[0-9a-zA-Z]+", w):
+            if len(w) < 2 or w in STOPWORDS or w in bw or re.fullmatch(r"[0-9a-zA-Z]+", w):
                 continue
             cnt[w] += 1
     return [{"word": w, "count": n} for w, n in cnt.most_common(limit)]
 
 
-def voc(conn):
+def voc(conn, range_min=0):
+    bw = _blocked_words(conn)
     rows = conn.execute(f"SELECT content, created_at FROM danmu WHERE {NB}").fetchall()
     ago5 = (datetime.datetime.now() - datetime.timedelta(minutes=5)).strftime("%Y-%m-%d %H:%M:%S")
+    cut = _cut_time(range_min)
     total = {c: 0 for c, _ in VOC_CATS}
     recent = {c: 0 for c, _ in VOC_CATS}
     for content, created in rows:
-        if not content:
+        if not content or any(b in content for b in bw):   # 屏蔽词内容不计入
+            continue
+        if cut and (not created or created < cut):
             continue
         for cat, kws in VOC_CATS:
             if any(k in content for k in kws):
@@ -57,6 +73,28 @@ def voc(conn):
     out = [{"category": c, "count": total[c], "recent": recent[c]} for c, _ in VOC_CATS]
     out.sort(key=lambda x: x["count"], reverse=True)
     return out
+
+
+def voc_danmu(conn, category, range_min=0, limit=200):
+    """某个 VOC 分类的原声弹幕:内容 + 发言人 + 时间(排除屏蔽用户/词,可限时间范围)。"""
+    kws = dict(VOC_CATS).get(category)
+    if not kws:
+        return {"category": category, "total": 0, "danmu": []}
+    bw = _blocked_words(conn)
+    cut = _cut_time(range_min)
+    rows = conn.execute(
+        f"SELECT nickname, content, created_at FROM danmu WHERE {NB} ORDER BY id DESC").fetchall()
+    out = []
+    for nick, content, created in rows:
+        if not content or any(b in content for b in bw):
+            continue
+        if cut and (not created or created < cut):
+            continue
+        if any(k in content for k in kws):
+            out.append({"nickname": nick, "content": content, "created_at": created})
+            if len(out) >= limit:
+                break
+    return {"category": category, "total": len(out), "danmu": out}
 
 
 def _count_since(conn, table, seconds):

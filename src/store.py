@@ -34,6 +34,9 @@ CREATE TABLE IF NOT EXISTS room_stat (
 CREATE TABLE IF NOT EXISTS blocklist (
   user_id TEXT PRIMARY KEY, nickname TEXT, blocked_at TEXT
 );
+CREATE TABLE IF NOT EXISTS word_blocklist (
+  word TEXT PRIMARY KEY, blocked_at TEXT
+);
 CREATE TABLE IF NOT EXISTS meta (
   key TEXT PRIMARY KEY, value TEXT
 );
@@ -136,6 +139,29 @@ class Store:
 
     def blocked_ids(self):
         return {r[0] for r in self.conn.execute("SELECT user_id FROM blocklist").fetchall()}
+
+    # ---- 屏蔽词 ----
+    def block_word(self, word):
+        word = (word or "").strip()
+        if not word:
+            return False
+        self.conn.execute(
+            "INSERT OR IGNORE INTO word_blocklist(word,blocked_at) VALUES(?,?)",
+            (word, self._now()))
+        self.conn.commit()
+        return True
+
+    def unblock_word(self, word):
+        self.conn.execute("DELETE FROM word_blocklist WHERE word=?", ((word or "").strip(),))
+        self.conn.commit()
+
+    def word_blocklist(self):
+        rows = self.conn.execute(
+            "SELECT word, blocked_at FROM word_blocklist ORDER BY blocked_at DESC").fetchall()
+        return [{"word": a, "blocked_at": b} for a, b in rows]
+
+    def blocked_words(self):
+        return [r[0] for r in self.conn.execute("SELECT word FROM word_blocklist").fetchall()]
 
     def counts(self) -> dict:
         cur = self.conn.cursor()

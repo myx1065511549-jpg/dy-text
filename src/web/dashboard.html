@@ -47,7 +47,9 @@
   .metric .sub{font-size:11px;color:var(--muted);margin-top:6px;white-space:nowrap}
   .metric .sub .up{color:var(--green)}
 
-  .grid{display:grid;grid-template-columns:1.35fr 1fr 0.92fr;gap:14px;align-items:start}
+  .grid{display:grid;grid-template-columns:1.35fr 1fr 0.92fr;gap:14px;align-items:stretch}
+  .col.mid{position:relative}
+  .col.mid .stream-panel{position:absolute;inset:0;margin:0}
   .col{display:flex;flex-direction:column;gap:14px;min-width:0}
   .panel{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:14px}
   .panel h2{font-size:13px;font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:8px}
@@ -79,8 +81,8 @@
   .cloud span{line-height:1;cursor:default}
 
   /* 弹幕流 */
-  .stream-panel{position:sticky;top:66px;display:flex;flex-direction:column;height:calc(100vh - 84px)}
-  #stream{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:3px;padding-right:2px}
+  .stream-panel{display:flex;flex-direction:column}
+  #stream{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:3px;padding-right:2px}
   .row{display:flex;gap:8px;align-items:baseline;padding:5px 7px;border-radius:7px;position:relative;animation:in .2s}
   .row:hover{background:var(--bg3)}
   .row .nick{color:var(--cyan);font-size:12px;font-weight:500;flex-shrink:0;max-width:120px;
@@ -103,8 +105,19 @@
   .rank .u .idx.top{color:var(--amber);font-weight:700}
   .rank .u .n{flex:1;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .rank .u .c{font-family:ui-monospace,monospace;color:var(--cyan)}
+  .rank .u .blkw{display:none;background:var(--bg4);border:1px solid var(--border);color:var(--text2);
+    font-size:11px;padding:1px 7px;border-radius:5px;margin-left:6px}
+  .rank .u:hover .blkw{display:inline-block}
+  .rank .u .blkw:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
   .rank .hint{font-size:11px;color:var(--muted);margin-top:8px}
-  .block-pool{max-height:240px;overflow-y:auto}
+  .block-pool{max-height:150px;overflow-y:auto}
+  .sub-t{font-size:12px;color:var(--text2);margin-bottom:6px;display:flex;align-items:center}
+  #tab_pool input{background:var(--bg3);border:1px solid var(--border);color:var(--text);
+    padding:4px 8px;border-radius:6px;font-size:12px;width:120px;outline:none}
+  #tab_pool input:focus{border-color:var(--accent)}
+  #tab_pool .sub-t button{background:var(--accent);color:#fff;border:none;padding:4px 10px;
+    border-radius:6px;font-size:12px;cursor:pointer}
+  #tab_pool .bu.word .n{color:var(--amber)}
   .block-pool .bu{display:flex;align-items:center;gap:8px;padding:7px 6px;border-bottom:1px solid var(--border);font-size:13px}
   .block-pool .bu .n{flex:1;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .block-pool .bu button{background:var(--bg4);border:1px solid var(--border);color:var(--text2);
@@ -126,8 +139,8 @@
   .modal .mh .ban{margin-left:8px;background:var(--accent);color:#fff;border:none;padding:5px 12px;
     border-radius:6px;font-size:12px;cursor:pointer}
 
-  @media(max-width:1200px){.grid{grid-template-columns:1fr 1fr}.stream-panel{height:520px;position:static}
-    .col.right{grid-column:1/-1}}
+  @media(max-width:1200px){.grid{grid-template-columns:1fr 1fr;align-items:start}.col.mid{position:static}
+    .col.mid .stream-panel{position:static;height:520px}.col.right{grid-column:1/-1}}
   @media(max-width:820px){.groups{grid-template-columns:1fr}.grid{grid-template-columns:1fr}}
 </style>
 </head>
@@ -191,12 +204,17 @@
         <canvas id="chart"></canvas>
       </div>
       <div class="panel">
-        <h2><span class="bar"></span>VOC 问题弹幕队列 <span class="r" id="vocHint"></span></h2>
+        <h2><span class="bar"></span>VOC 问题弹幕队列
+          <span class="r" id="vocRange">
+            <button data-m="5">5分</button><button data-m="20" class="on">20分</button>
+            <button data-m="60">1小时</button><button data-m="0">全场</button>
+          </span>
+        </h2>
         <div class="voc" id="voc"><span class="empty">采集中…</span></div>
       </div>
     </div>
 
-    <div class="col">
+    <div class="col mid">
       <div class="panel stream-panel">
         <h2><span class="bar"></span>实时弹幕流 <span class="r" id="streamCnt"></span></h2>
         <div id="stream"><span class="empty">等待弹幕…</span></div>
@@ -214,8 +232,16 @@
           <div class="hint">点击用户查看其历史弹幕</div>
         </div>
         <div id="tab_pool" style="display:none">
+          <div class="sub-t">屏蔽用户</div>
           <div class="block-pool scroll" id="pool"><span class="empty">暂无屏蔽用户</span></div>
-          <div class="hint">点击用户看历史弹幕,点「解除」取消屏蔽</div>
+          <div class="sub-t" style="margin-top:14px">屏蔽词
+            <span style="margin-left:auto;display:flex;gap:6px">
+              <input id="wordInput" placeholder="输入要屏蔽的词" spellcheck="false">
+              <button id="wordAddBtn">屏蔽</button>
+            </span>
+          </div>
+          <div class="block-pool scroll" id="wordpool"><span class="empty">暂无屏蔽词</span></div>
+          <div class="hint">点用户看历史/点「解除」取消;屏蔽词:含该词的弹幕不计入热词榜和VOC</div>
         </div>
       </div>
       <div class="panel">
@@ -237,6 +263,7 @@ const $=id=>document.getElementById(id);
 let counts={danmu:0,enter:0,likes:0,gift:0};
 let series=[];            // {ts:ms, v}
 let rangeMin=20;
+let vocRangeMin=20;
 let blocked=new Set();
 let curModalUser=null;
 
@@ -342,18 +369,40 @@ function loadHotrank(){ fetch('/api/hotwords').then(r=>r.json()).then(list=>{
   const el=$('hotrank'); if(!list.length){ el.innerHTML='<span class="empty">暂无热词</span>'; return; }
   el.innerHTML='';
   list.slice(0,20).forEach((w,i)=>{ const row=document.createElement('div'); row.className='u';
-    row.innerHTML='<span class="idx'+(i<3?' top':'')+'">'+(i+1)+'</span><span class="n"></span><span class="c">'+w.count+'</span>';
-    row.children[1].textContent=w.word; row.onclick=()=>openWord(w.word); el.appendChild(row); }); }); }
-function loadVoc(){ fetch('/api/voc').then(r=>r.json()).then(list=>{
+    row.innerHTML='<span class="idx'+(i<3?' top':'')+'">'+(i+1)+'</span><span class="n"></span>'
+      +'<span class="c">'+w.count+'</span><span class="blkw">屏蔽</span>';
+    row.children[1].textContent=w.word;
+    row.onclick=()=>openWord(w.word);
+    row.children[3].onclick=(e)=>{ e.stopPropagation(); blockWord(w.word); };
+    el.appendChild(row); }); }); }
+function loadVoc(){ fetch('/api/voc?range='+vocRangeMin).then(r=>r.json()).then(list=>{
   const el=$('voc'); const max=Math.max(1,...list.map(v=>v.count));
-  const totRec=list.reduce((a,b)=>a+b.recent,0);
-  $('vocHint').innerHTML=totRec?('<span style="color:var(--amber)">近5分 '+totRec+' 条</span>'):'';
   if(!list.some(v=>v.count>0)){ el.innerHTML='<span class="empty">暂无问题弹幕</span>'; return; }
   el.innerHTML='';
-  list.forEach(v=>{ const row=document.createElement('div'); row.className='vr';
+  list.forEach(v=>{ const row=document.createElement('div'); row.className='vr'; row.style.cursor='pointer';
     row.innerHTML='<span class="vn"></span><span class="vbar"><i style="width:'+(v.count/max*100)+'%"></i></span>'
       +'<span class="vc">'+v.count+'</span><span class="vrec">'+(v.recent?'<span class="hot">+'+v.recent+'</span>':'')+'</span>';
-    row.children[0].textContent=v.category; el.appendChild(row); }); }); }
+    row.children[0].textContent=v.category; row.onclick=()=>openVoc(v.category); el.appendChild(row); }); }); }
+function openVoc(cat){
+  curModalUser=null; $('mUser').textContent='VOC: '+cat; $('mCnt').textContent='';
+  $('mBan').style.display='none'; $('mBody').innerHTML='<div class="empty">加载中…</div>';
+  $('mask').classList.add('show');
+  fetch('/api/voc_danmu?category='+encodeURIComponent(cat)+'&range='+vocRangeMin).then(r=>r.json()).then(d=>{
+    $('mCnt').textContent='共 '+d.total+' 条'; renderRows(d.danmu,true); });
+}
+
+// ---------- 屏蔽词 ----------
+function blockWord(w){ if(!w) return; fetch('/api/block_word?word='+encodeURIComponent(w),{method:'POST'}); }
+function unblockWord(w){ fetch('/api/unblock_word?word='+encodeURIComponent(w),{method:'POST'}); }
+function loadWordBlocklist(){ fetch('/api/word_blocklist').then(r=>r.json()).then(list=>{
+  const pool=$('wordpool');
+  if(!list.length){ pool.innerHTML='<span class="empty">暂无屏蔽词</span>'; return; }
+  pool.innerHTML='';
+  list.forEach(b=>{ const el=document.createElement('div'); el.className='bu word';
+    el.innerHTML='<span class="n"></span><button>解除</button>';
+    el.children[0].textContent=b.word; el.children[0].title='屏蔽于 '+b.blocked_at;
+    el.children[1].onclick=()=>unblockWord(b.word); pool.appendChild(el); }); }); }
+function addWord(){ const w=$('wordInput').value.trim(); if(!w) return; blockWord(w); $('wordInput').value=''; }
 function loadUsers(){ fetch('/api/top_users').then(r=>r.json()).then(list=>{
   const el=$('users'); if(!list.length){ el.innerHTML='<span class="empty">暂无数据</span>'; return; }
   el.innerHTML='';
@@ -408,6 +457,13 @@ document.querySelectorAll('.panel h2.tabs .tab').forEach(t=>t.onclick=()=>{
   $('tab_users').style.display=t.dataset.tab==='users'?'':'none';
   $('tab_pool').style.display=t.dataset.tab==='pool'?'':'none';
 });
+// VOC 时间范围
+$('vocRange').querySelectorAll('button').forEach(b=>b.onclick=()=>{
+  $('vocRange').querySelectorAll('button').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on'); vocRangeMin=+b.dataset.m; loadVoc(); });
+// 手动加屏蔽词
+$('wordAddBtn').onclick=addWord;
+$('wordInput').addEventListener('keydown',e=>{ if(e.key==='Enter') addWord(); });
 const cv=$('chart'),ctx=cv.getContext('2d');
 function drawChart(){
   const w=cv.clientWidth,h=cv.clientHeight,dpr=window.devicePixelRatio||1;
@@ -460,13 +516,14 @@ function connect(){
     else if(m.kind==='enter'){ counts.enter++; $('m_enter').textContent=counts.enter; addRow('enter',{nick:m.nickname}); }
     else if(m.kind==='like'){ counts.likes++; $('m_likes').textContent=counts.likes; }
     else if(m.kind==='gift'){ counts.gift++; $('m_gift').textContent=counts.gift; addRow('gift',{nick:m.nickname}); }
-    else if(m.kind==='blocked'){ blocked.add(m.user_id); removeUserRows(m.user_id); loadBlocklist(); }
+    else if(m.kind==='blocked'){ blocked.add(m.user_id); removeUserRows(m.user_id); loadBlocklist(); loadUsers(); loadHotrank(); loadVoc(); }
     else if(m.kind==='unblocked'){ blocked.delete(m.user_id); loadBlocklist(); }
+    else if(m.kind==='word_blocked'||m.kind==='word_unblocked'){ loadWordBlocklist(); loadHotrank(); loadVoc(); }
     else if(m.kind==='sys'){ addRow('sys',{txt:m.msg}); }
   };
 }
 
-loadSummary(); loadSeries(); loadHotrank(); loadVoc(); loadUsers(); loadBlocklist(); loadInitialDanmu(); connect();
+loadSummary(); loadSeries(); loadHotrank(); loadVoc(); loadUsers(); loadBlocklist(); loadWordBlocklist(); loadInitialDanmu(); connect();
 setInterval(loadSummary,5000); setInterval(loadHotrank,6000); setInterval(loadVoc,5000);
 setInterval(loadUsers,7000);
 </script>
