@@ -81,7 +81,7 @@ def parse_live_msg(d: dict):
         pg = u.get("payGrade") or {}
         fc = (u.get("fansClub") or {}).get("data") or {}
         return {"type": "chat", "source": "live", "room_id": room_id,
-                "user_id": str(u.get("idStr") or u.get("id") or ""),
+                "user_id": str(u.get("webcastUid") or u.get("idStr") or ""),
                 "sec_uid": u.get("webcastUid") or "",
                 "nickname": u.get("nickname") or "",
                 "gender": _num(u.get("gender")),
@@ -91,16 +91,19 @@ def parse_live_msg(d: dict):
                 "ts": _num(d.get("eventTime"))}
     if method == "WebcastMemberMessage":
         return {"type": "enter", "source": "live", "room_id": room_id,
-                "user_id": str(u.get("idStr") or ""), "nickname": u.get("nickname") or "",
+                "user_id": str(u.get("webcastUid") or u.get("idStr") or ""),
+                "nickname": u.get("nickname") or "",
                 "ts": _num(d.get("eventTime"))}
     if method == "WebcastLikeMessage":
         return {"type": "like", "source": "live", "room_id": room_id,
-                "user_id": str(u.get("idStr") or ""), "nickname": u.get("nickname") or "",
+                "user_id": str(u.get("webcastUid") or u.get("idStr") or ""),
+                "nickname": u.get("nickname") or "",
                 "count": _num(d.get("count")), "ts": _num(d.get("eventTime"))}
     if method == "WebcastGiftMessage":
         g = d.get("gift") or {}
         return {"type": "gift", "source": "live", "room_id": room_id,
-                "user_id": str(u.get("idStr") or ""), "nickname": u.get("nickname") or "",
+                "user_id": str(u.get("webcastUid") or u.get("idStr") or ""),
+                "nickname": u.get("nickname") or "",
                 "gift_name": g.get("name") or d.get("giftName") or "",
                 "count": _num(d.get("repeatCount") or d.get("count")) or 1,
                 "ts": _num(d.get("eventTime"))}

@@ -32,6 +32,7 @@
   .lv{display:inline-block;font-size:10px;font-weight:700;color:#fff;
     background:linear-gradient(135deg,#ff8a3d,#fe2c55);padding:0 5px;border-radius:4px;
     margin-right:5px;line-height:15px;flex-shrink:0;vertical-align:middle}
+  .utag{font-size:10px;color:var(--muted);font-family:ui-monospace,monospace;margin-left:5px}
   .spacer{flex:1}
   .switch{display:flex;align-items:center;gap:7px}
   .switch input{background:var(--bg3);border:1px solid var(--border);color:var(--text);
@@ -284,6 +285,9 @@
 
 <script>
 const $=id=>document.getElementById(id);
+// 昵称被抖音打码时,用真实标识(webcastUid)尾4位做短标识,区分同名用户
+function uidTag(uid){ return (uid && (''+uid).length>8) ? '#'+(''+uid).slice(-4) : ''; }
+function appendTag(el,uid){ const t=uidTag(uid); if(t){ const s=document.createElement('span'); s.className='utag'; s.textContent=t; el.appendChild(s); } }
 let counts={danmu:0,enter:0,likes:0,gift:0};
 let series=[];            // {ts:ms, v}
 let rangeMin=20;
@@ -329,6 +333,7 @@ function addRow(kind,d){
     const nk=row.children[0];
     if(d.level) nk.innerHTML='<span class="lv">Lv'+d.level+'</span>';
     nk.appendChild(document.createTextNode(d.nick||''));
+    appendTag(nk, d.user_id);
     row.children[1].textContent=d.txt||'';
     row.children[2].onclick=()=>blockUser(d.user_id,d.nick);
   } else if(kind==='enter'){
@@ -443,6 +448,7 @@ function loadUsers(){ fetch('/api/top_users').then(r=>r.json()).then(list=>{
     const n=row.children[1];
     if(u.level) n.innerHTML='<span class="lv">Lv'+u.level+'</span>';
     n.appendChild(document.createTextNode(u.nickname));
+    appendTag(n, u.user_id);
     row.onclick=()=>openUser(u.user_id,u.nickname); el.appendChild(row); }); }); }
 function loadInitialDanmu(){ fetch('/api/danmu?limit=40').then(r=>r.json()).then(list=>{
   if(list.length){ streamInited=false; list.forEach(d=>addRow('chat',{user_id:d.user_id,nick:d.nickname,txt:d.content,level:d.level})); } }); }

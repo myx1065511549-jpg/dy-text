@@ -60,6 +60,7 @@ clear_lock = threading.Lock()
 
 active_source = ["live"]    # 当前展示的数据源
 src_last = {"live": 0.0, "browser": 0.0}   # 各源最近一条记录时间(健康判断)
+manual_until = [0.0]        # 手动切源后的宽限期,期间不自动切
 browser_store = [None]       # 备源(浏览器 worker)记录经 /internal/recs 入库用
 browser_lock = threading.Lock()
 worker_proc = [None]         # 备源浏览器采集子进程(隔离 Playwright)
@@ -206,11 +207,14 @@ def health_monitor():
             if p is None or p.poll() is not None:
                 spawn_worker()
         now = time.time()
-        act = active_source[0]
-        other = "browser" if act == "live" else "live"
-        if (now - src_last.get(act, 0)) > 20 and (now - src_last.get(other, 0)) < 12:
-            active_source[0] = other
-            push({"kind": "source", "source": other, "auto": True})
+        if now < manual_until[0]:
+            continue                       # 手动切源宽限期,不自动切
+        live_ok = (now - src_last.get("live", 0)) < 15
+        browser_ok = (now - src_last.get("browser", 0)) < 15
+        want = "live" if live_ok else ("browser" if browser_ok else active_source[0])
+        if want != active_source[0]:
+            active_source[0] = want         # 优先主源,主源失效才用备源,备源恢复主源后切回
+            push({"kind": "source", "source": want, "auto": True})
 
 
 # ---------------- 启动 ----------------
@@ -298,6 +302,7 @@ def api_sources():
 def api_switch_source(source: str):
     if source in ("live", "browser"):
         active_source[0] = source
+        manual_until[0] = time.time() + 30   # 手动切换给 30 秒宽限,不被自动切覆盖
         push({"kind": "source", "source": source})
     return {"source": active_source[0]}
 
