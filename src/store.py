@@ -41,7 +41,26 @@ CREATE TABLE IF NOT EXISTS word_blocklist (
 CREATE TABLE IF NOT EXISTS meta (
   key TEXT PRIMARY KEY, value TEXT
 );
+CREATE TABLE IF NOT EXISTS session (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  room_id TEXT, started_at TEXT, ended_at TEXT
+);
+CREATE TABLE IF NOT EXISTS voc_config (
+  category TEXT PRIMARY KEY, keywords TEXT, is_risk INTEGER DEFAULT 0, sort INTEGER DEFAULT 0
+);
 """
+
+# VOC 分类默认种子(界面可编辑,存 voc_config 表,跨场次保留)。
+# 风险负面单列且排最前:管理端最关注的舆情信号。
+DEFAULT_VOC_CATS = [
+    ("风险负面", "骗,假货,投诉,差评,举报,垃圾,避雷,翻车,忽悠,智商税,别买,后悔,坏了,虚假", 1),
+    ("价格优惠", "多少钱,价格,优惠,便宜,贵,折扣,券,打折,降价,返现,几块,多少", 0),
+    ("链接下单", "链接,怎么买,下单,小黄车,购物车,几号,第几,上链接,拍下,哪里买,怎么拍,拍了", 0),
+    ("库存补货", "库存,有货,还有,补货,断货,卖完,没货,抢,秒没,还有吗", 0),
+    ("发货售后", "发货,物流,快递,什么时候到,几天到,退款,退货,换货,售后,客服", 0),
+    ("质量效果", "质量,效果,怎么样,真的假的,材质,靠谱,耐用,好用吗,有用吗", 0),
+    ("尺码型号", "尺码,型号,多大,尺寸,码数,大小,身高,体重,多重,适合", 0),
+]
 
 # 索引在迁移补列之后再建(否则旧库上 danmu(source) 索引会因缺列报错)
 INDICES = """
@@ -50,6 +69,11 @@ CREATE INDEX IF NOT EXISTS idx_danmu_user ON danmu(user_id);
 CREATE INDEX IF NOT EXISTS idx_danmu_created ON danmu(created_at);
 CREATE INDEX IF NOT EXISTS idx_danmu_source ON danmu(source);
 CREATE INDEX IF NOT EXISTS idx_enter_created ON enter(created_at);
+CREATE INDEX IF NOT EXISTS idx_danmu_session ON danmu(session_id, ts);
+CREATE INDEX IF NOT EXISTS idx_gift_session ON gift(session_id);
+CREATE INDEX IF NOT EXISTS idx_enter_session ON enter(session_id);
+CREATE INDEX IF NOT EXISTS idx_likes_session ON likes(session_id);
+CREATE INDEX IF NOT EXISTS idx_room_stat_session ON room_stat(session_id);
 """
 
 # 给旧库补列(CREATE TABLE IF NOT EXISTS 不会给已存在的表加列)
@@ -58,9 +82,12 @@ _MIGRATIONS = [
     ("danmu", "fans_level", "INTEGER"), ("danmu", "source", "TEXT"),
     ("gift", "source", "TEXT"), ("enter", "source", "TEXT"),
     ("likes", "source", "TEXT"), ("room_stat", "source", "TEXT"),
+    ("danmu", "session_id", "INTEGER"), ("gift", "session_id", "INTEGER"),
+    ("enter", "session_id", "INTEGER"), ("likes", "session_id", "INTEGER"),
+    ("room_stat", "session_id", "INTEGER"),
 ]
 
-# 切换直播间时要清空的数据表(屏蔽名单不清)
+# 带场次归属的数据表(屏蔽名单和VOC配置不在其中,跨场次保留)
 _DATA_TABLES = ("danmu", "gift", "enter", "likes", "room_stat")
 
 
@@ -76,55 +103,94 @@ class Store:
             except Exception:
                 pass  # 列已存在
         self.conn.executescript(INDICES)
+        if not self.conn.execute("SELECT 1 FROM voc_config LIMIT 1").fetchone():
+            for i, (cat, kws, risk) in enumerate(DEFAULT_VOC_CATS):
+                self.conn.execute(
+                    "INSERT INTO voc_config(category,keywords,is_risk,sort) VALUES(?,?,?,?)",
+                    (cat, kws, risk, i))
         self.conn.commit()
 
     def _now(self):
         return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+    # ---- 场次(session):数据不删,按场归档 ----
+    def current_session(self, room_id=None):
+        """当前未结束的场次 id;不存在则开一场(兜底,正常由 new_session 创建)。"""
+        row = self.conn.execute(
+            "SELECT id FROM session WHERE ended_at IS NULL ORDER BY id DESC LIMIT 1").fetchone()
+        if row:
+            return row[0]
+        cur = self.conn.execute(
+            "INSERT INTO session(room_id,started_at) VALUES(?,?)", (room_id, self._now()))
+        self.conn.commit()
+        return cur.lastrowid
+
+    def new_session(self, room_id=None):
+        """结束当前场次并开新场。旧数据保留;累计场观(meta)归零。"""
+        now = self._now()
+        self.conn.execute("UPDATE session SET ended_at=? WHERE ended_at IS NULL", (now,))
+        cur = self.conn.execute(
+            "INSERT INTO session(room_id,started_at) VALUES(?,?)", (room_id, now))
+        self.conn.execute("DELETE FROM meta WHERE key='total_user'")
+        self.conn.commit()
+        return cur.lastrowid
+
+    def sessions(self):
+        rows = self.conn.execute(
+            "SELECT id, room_id, started_at, ended_at FROM session ORDER BY id DESC").fetchall()
+        return [{"id": a, "room_id": b, "started_at": c, "ended_at": d} for a, b, c, d in rows]
+
+    def delete_session(self, sid):
+        """删除一个历史场次及其全部数据。当前进行中的场次不允许删。"""
+        row = self.conn.execute("SELECT ended_at FROM session WHERE id=?", (sid,)).fetchone()
+        if row is None or row[0] is None:
+            return False
+        for t in _DATA_TABLES:
+            self.conn.execute(f"DELETE FROM {t} WHERE session_id=?", (sid,))
+        self.conn.execute("DELETE FROM session WHERE id=?", (sid,))
+        self.conn.commit()
+        return True
+
     def save(self, r: dict):
         t = r.get("type")
         now = self._now()
         src = r.get("source")
+        sid = self.current_session(r.get("room_id"))
         c = self.conn
         if t == "chat":
             c.execute(
                 "INSERT INTO danmu(room_id,user_id,sec_uid,nickname,gender,level,fans_level,"
-                "content,ts,created_at,source) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                "content,ts,created_at,source,session_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
                 (r.get("room_id"), r.get("user_id"), r.get("sec_uid"), r.get("nickname"),
                  r.get("gender"), r.get("level"), r.get("fans_level"),
-                 r.get("content"), r.get("ts"), now, src))
+                 r.get("content"), r.get("ts"), now, src, sid))
         elif t == "gift":
             c.execute(
-                "INSERT INTO gift(room_id,user_id,nickname,gift_name,repeat_count,ts,created_at,source)"
-                " VALUES(?,?,?,?,?,?,?,?)",
+                "INSERT INTO gift(room_id,user_id,nickname,gift_name,repeat_count,ts,created_at,"
+                "source,session_id) VALUES(?,?,?,?,?,?,?,?,?)",
                 (r.get("room_id"), r.get("user_id"), r.get("nickname"),
-                 r.get("gift_name"), r.get("count"), r.get("ts"), now, src))
+                 r.get("gift_name"), r.get("count"), r.get("ts"), now, src, sid))
         elif t == "enter":
             c.execute(
-                "INSERT INTO enter(room_id,user_id,nickname,ts,created_at,source) VALUES(?,?,?,?,?,?)",
-                (r.get("room_id"), r.get("user_id"), r.get("nickname"), r.get("ts"), now, src))
+                "INSERT INTO enter(room_id,user_id,nickname,ts,created_at,source,session_id)"
+                " VALUES(?,?,?,?,?,?,?)",
+                (r.get("room_id"), r.get("user_id"), r.get("nickname"), r.get("ts"), now, src, sid))
         elif t == "like":
             c.execute(
-                "INSERT INTO likes(room_id,user_id,nickname,count,ts,created_at,source)"
-                " VALUES(?,?,?,?,?,?,?)",
+                "INSERT INTO likes(room_id,user_id,nickname,count,ts,created_at,source,session_id)"
+                " VALUES(?,?,?,?,?,?,?,?)",
                 (r.get("room_id"), r.get("user_id"), r.get("nickname"),
-                 r.get("count"), r.get("ts"), now, src))
+                 r.get("count"), r.get("ts"), now, src, sid))
         elif t == "room_stat":
             c.execute(
-                "INSERT INTO room_stat(room_id,online_count,ts,created_at,source) VALUES(?,?,?,?,?)",
-                (r.get("room_id"), r.get("online_count"), r.get("ts"), now, src))
+                "INSERT INTO room_stat(room_id,online_count,ts,created_at,source,session_id)"
+                " VALUES(?,?,?,?,?,?)",
+                (r.get("room_id"), r.get("online_count"), r.get("ts"), now, src, sid))
         else:
             return False
         return True
 
     def commit(self):
-        self.conn.commit()
-
-    def clear(self):
-        """切换直播间时清空数据表 + meta,但保留屏蔽名单。"""
-        for t in _DATA_TABLES:
-            self.conn.execute(f"DELETE FROM {t}")
-        self.conn.execute("DELETE FROM meta")
         self.conn.commit()
 
     # ---- 累计场观等单值状态存 meta ----
@@ -183,6 +249,33 @@ class Store:
 
     def blocked_words(self):
         return [r[0] for r in self.conn.execute("SELECT word FROM word_blocklist").fetchall()]
+
+    # ---- VOC 分类配置 ----
+    def voc_config(self):
+        rows = self.conn.execute(
+            "SELECT category, keywords, is_risk FROM voc_config ORDER BY sort").fetchall()
+        return [{"category": a, "keywords": b, "is_risk": bool(c)} for a, b, c in rows]
+
+    def set_voc_config(self, cats):
+        """全量替换 VOC 分类配置。cats: [{category, keywords, is_risk}]"""
+        cleaned = []
+        seen = set()
+        for c in cats:
+            name = (c.get("category") or "").strip()
+            kws = ",".join(k.strip() for k in (c.get("keywords") or "").split(",") if k.strip())
+            if not name or not kws or name in seen:
+                continue
+            seen.add(name)
+            cleaned.append((name, kws, 1 if c.get("is_risk") else 0))
+        if not cleaned:
+            return False
+        self.conn.execute("DELETE FROM voc_config")
+        for i, (name, kws, risk) in enumerate(cleaned):
+            self.conn.execute(
+                "INSERT INTO voc_config(category,keywords,is_risk,sort) VALUES(?,?,?,?)",
+                (name, kws, risk, i))
+        self.conn.commit()
+        return True
 
     def counts(self) -> dict:
         cur = self.conn.cursor()

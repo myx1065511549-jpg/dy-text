@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dashboard",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "set DISABLE_LIVE=1&& set DISABLE_BROWSER=1&& python src/server.py"],
+      "port": 8848
+    }
+  ]
+}

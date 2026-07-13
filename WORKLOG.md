@@ -137,3 +137,29 @@ GitHub:
 打包:build.spec 增加 chromium_headless_shell-1228 和 tools/douyinLive;server.py frozen 下 --browser-worker 用 sys.executable 自身。tools/ 与 dist/ 不入库。
 
 GitHub:源码已推(ebd10d8)。第三方 douyinLive 二进制按 docs 说明下载,不入库。
+
+## 2026-07-13 11:38
+
+看板优化P0+P1（计划见 ~/.claude/plans/zazzy-fluttering-rabin.md，定位：品牌自播VOC与管理视角）：
+
+- P0：新建项目CLAUDE.md（双源过滤铁律、schema、代码约定、坑索引）
+- P1场次归档：切房间/启动/手动「新场次」不再删数据，改为session归档。store.py加session表+5表session_id列（走_MIGRATIONS，旧库兼容已验证）；stats.py的_src升级_scope（source+session双过滤，全部查询生效）+sessions_summary（每场按数据更全的源统计防双源重复计数）；server.py新增POST /api/new_session、GET /api/sessions、DELETE /api/session/{id}；前端顶栏场次时间+新场次/历史场次按钮+历史场次弹层（复用#mask）
+- 顺手修掉resetAll引用不存在的$('cloud')导致切房间时JS抛错的bug
+- 转化率踩坑：直接speakers/enters会超100%（开播采集前已在房间的人发言但无进场记录），改为交集口径（发言且有进场记录/进场人数），真实数据验证29/422≈6.9%合理
+- 测试：tests/test_stats.py新建4例+test_store.py加2例，7 passed；真实直播间端到端验证（新场次归零、历史场次弹层3场、当前场拒删）
+- 注意：浏览器pane对高频弹幕流页面截图会超时，验证用read_page/JS读DOM代替
+
+## 2026-07-13 12:00
+
+看板优化P2到P4完成,全部计划落地:
+
+- P2 VOC增强:新增「风险负面」分类(红色高亮+置顶+脉冲提示);分类和关键词入库voc_config表,VOC卡片⚙配置弹层可编辑(跨场次保留);VOC分类趋势小图(5分钟/桶,多线canvas)
+- P3 节奏时间轴:原「在线人数趋势」升级为「直播节奏」,在线+弹幕/分+进场/分三线同轴(时间线性映射,不再按index等距),悬停tooltip显示各值,点击任意位置弹出该分钟弹幕原文(/api/danmu_at)
+- P4:发言观众画像卡(粉丝团弹幕占比/等级分布桶/性别比,备源活跃时显示降级提示);指标卡新增「发言转化」(交集口径,与场次汇总一致);弹幕流礼物行显示礼物名×数量(WS推送补gift_name/count字段);弹幕流「全部/粉丝团/路人」筛选(备源置灰)
+- 测试13例全绿;真实直播间端到端验证(接口+DOM+交互链路),console零错误
+- 遗留:exe未重新打包,dist还是旧版;截图工具对高频弹幕页面会超时,验证以DOM/接口为准
+- HANDOFF.md已同步更新
+
+## 2026-07-13 12:10
+
+修在线人数折线消失:douyinLive偶发整场只推1条RoomStats(弹幕/进场正常,仅在线人数消息断供),而在线序列按活跃源过滤,主源活跃时序列只剩1个点画不成线。根因是设计问题:在线人数是房间级数据,两源报同一个值,按源过滤只对用户级数据防重复计数有意义。修复:online_series/summary当前在线/场次峰值全部改为只按session过滤不按source过滤;前端loadSeries加10秒轮询兜底(WS仍只推活跃源)。加1例跨源合并测试,14 passed,浏览器canvas像素级验证红线恢复。

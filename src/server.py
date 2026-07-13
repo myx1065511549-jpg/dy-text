@@ -55,7 +55,7 @@ blocked_ids = set()
 
 current_rid = [WEB_RID]
 switch_gen = [0]            # 房间切换代次,变化即让两个采集器停当前连接
-cleared_gen = [-1]         # 已为哪个代次清过库
+cleared_gen = [-1]         # 已为哪个代次开过新场次
 clear_lock = threading.Lock()
 
 active_source = ["live"]    # 当前展示的数据源
@@ -106,18 +106,24 @@ def handle_record(name, store, r):
     if t == "chat":
         if not blocked:
             push({"kind": "chat", "user_id": uid, "nickname": r.get("nickname"),
-                  "content": r.get("content"), "level": r.get("level")})
+                  "content": r.get("content"), "level": r.get("level"),
+                  "fans_level": r.get("fans_level")})
     elif t == "room_stat" and r.get("online_count") is not None:
         push({"kind": "online", "t": time.strftime("%H:%M:%S"), "v": r["online_count"]})
-    elif t in ("enter", "like", "gift"):
+    elif t == "gift":
+        if not blocked:
+            push({"kind": "gift", "nickname": r.get("nickname"),
+                  "gift_name": r.get("gift_name"), "count": r.get("count")})
+    elif t in ("enter", "like"):
         if not blocked:
             push({"kind": t, "nickname": r.get("nickname")})
 
 
-def maybe_clear(store, gen):
+def maybe_new_session(store, gen):
+    """切房间后第一个到达的采集器负责开新场次(数据归档,不删)。"""
     with clear_lock:
         if cleared_gen[0] != gen:
-            store.clear()
+            store.new_session(current_rid[0])
             cleared_gen[0] = gen
 
 
@@ -127,7 +133,7 @@ def run_collector(name, collect_impl):
     while True:
         gen = switch_gen[0]
         if gen != my_gen:
-            maybe_clear(store, gen)
+            maybe_new_session(store, gen)
             my_gen = gen
 
         def should_stop():
@@ -226,6 +232,10 @@ async def _startup():
     blocked_ids.update(s.blocked_ids())
     s.close()
     browser_store[0] = Store(DB_PATH)
+    # 程序启动即开新场(一场 = 启动/切房间/手动新场次之间的区间)
+    with clear_lock:
+        browser_store[0].new_session(current_rid[0])
+        cleared_gen[0] = switch_gen[0]
     if not os.environ.get("DISABLE_LIVE"):
         threading.Thread(target=run_collector, args=("live", live_impl), daemon=True).start()
     spawn_worker()   # 备源浏览器采集(独立进程)
@@ -264,7 +274,15 @@ def _src():
 # ---------------- 数据源 ----------------
 @app.get("/api/config")
 def api_config():
-    return {"web_rid": current_rid[0], "source": active_source[0]}
+    c = _conn()
+    try:
+        row = c.execute("SELECT id, started_at FROM session WHERE ended_at IS NULL "
+                        "ORDER BY id DESC LIMIT 1").fetchone()
+    finally:
+        c.close()
+    return {"web_rid": current_rid[0], "source": active_source[0],
+            "session_id": row[0] if row else None,
+            "session_started": row[1] if row else None}
 
 
 @app.post("/internal/recs")
@@ -315,11 +333,39 @@ def api_switch(web_rid: str):
         switch_gen[0] += 1          # 主源采集器停当前连接、换新房间
         with clear_lock:
             if browser_store[0] is not None:
-                browser_store[0].clear()
+                browser_store[0].new_session(rid)
             cleared_gen[0] = switch_gen[0]
         spawn_worker()              # 备源 worker 换新房间重启
         push({"kind": "switch", "web_rid": rid})
     return {"web_rid": current_rid[0]}
+
+
+# ---------------- 场次 ----------------
+@app.post("/api/new_session")
+def api_new_session():
+    with clear_lock:
+        st = browser_store[0]
+        sid = st.new_session(current_rid[0]) if st is not None else None
+    started = time.strftime("%Y-%m-%d %H:%M:%S")
+    push({"kind": "new_session", "started_at": started})
+    return {"session_id": sid, "started_at": started}
+
+
+@app.get("/api/sessions")
+def api_sessions():
+    c = _conn()
+    try:
+        return stats.sessions_summary(c)
+    finally:
+        c.close()
+
+
+@app.delete("/api/session/{sid}")
+def api_delete_session(sid: int):
+    with clear_lock:
+        st = browser_store[0]
+        ok = st.delete_session(sid) if st is not None else False
+    return {"ok": ok}
 
 
 # ---------------- 统计接口(按当前活跃源过滤) ----------------
@@ -350,6 +396,41 @@ def api_voc(range: int = 0):
         c.close()
 
 
+@app.get("/api/voc_series")
+def api_voc_series(bucket: int = 5):
+    c = _conn()
+    try:
+        return stats.voc_series(c, _src(), bucket_min=max(1, bucket))
+    finally:
+        c.close()
+
+
+@app.get("/api/voc_config")
+def api_voc_config():
+    st = Store(DB_PATH)
+    try:
+        return st.voc_config()
+    finally:
+        st.close()
+
+
+@app.post("/api/voc_config")
+async def api_set_voc_config(request: Request):
+    try:
+        cats = await request.json()
+        assert isinstance(cats, list)
+    except Exception:
+        return {"ok": False, "msg": "invalid body"}
+    st = Store(DB_PATH)
+    try:
+        ok = st.set_voc_config(cats)
+    finally:
+        st.close()
+    if ok:
+        push({"kind": "voc_config"})
+    return {"ok": ok}
+
+
 @app.get("/api/voc_danmu")
 def api_voc_danmu(category: str, range: int = 0, limit: int = 200):
     c = _conn()
@@ -363,7 +444,34 @@ def api_voc_danmu(category: str, range: int = 0, limit: int = 200):
 def api_online_series():
     c = _conn()
     try:
-        return stats.online_series(c, 600, _src())
+        return stats.online_series(c, 600)
+    finally:
+        c.close()
+
+
+@app.get("/api/activity_series")
+def api_activity_series():
+    c = _conn()
+    try:
+        return stats.activity_series(c, _src())
+    finally:
+        c.close()
+
+
+@app.get("/api/danmu_at")
+def api_danmu_at(date: str, minute: str, limit: int = 300):
+    c = _conn()
+    try:
+        return stats.danmu_at(c, date, minute, limit, _src())
+    finally:
+        c.close()
+
+
+@app.get("/api/audience")
+def api_audience():
+    c = _conn()
+    try:
+        return stats.audience(c, _src())
     finally:
         c.close()
 
@@ -399,12 +507,13 @@ def api_word_danmu(word: str, limit: int = 200):
 def api_danmu(limit: int = 60):
     c = _conn()
     try:
-        sc, sp = stats._src(_src())
+        sc, sp = stats._scope(c, _src())
         rows = c.execute(
-            f"SELECT user_id, nickname, content, created_at, level FROM danmu "
+            f"SELECT user_id, nickname, content, created_at, level, fans_level FROM danmu "
             f"WHERE {stats.NB}{sc} ORDER BY id DESC LIMIT ?", sp + [limit]).fetchall()
-        return [{"user_id": u, "nickname": a, "content": b, "created_at": d, "level": lv}
-                for u, a, b, d, lv in rows][::-1]
+        return [{"user_id": u, "nickname": a, "content": b, "created_at": d,
+                 "level": lv, "fans_level": fl}
+                for u, a, b, d, lv, fl in rows][::-1]
     finally:
         c.close()
 

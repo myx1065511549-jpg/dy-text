@@ -88,6 +88,45 @@
   .voc .vc{width:36px;text-align:right;font-family:ui-monospace,monospace;font-size:14px}
   .voc .vrec{width:54px;text-align:right;font-size:11px;color:var(--muted)}
   .voc .vrec .hot{color:var(--amber)}
+  .voc .vr.risk .vn{color:var(--accent);font-weight:600}
+  .voc .vr.risk .vbar i{background:var(--accent)}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+  .voc .vr.risk .vrec .hot{color:var(--accent);animation:pulse 1.2s infinite}
+  #vocChart{height:92px;margin-bottom:6px}
+  .voc-legend{display:flex;flex-wrap:wrap;gap:3px 10px;font-size:11px;color:var(--text2);margin-bottom:4px}
+  .voc-legend i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:4px}
+  /* VOC 配置编辑 */
+  .vc-row{display:flex;gap:6px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border)}
+  .vc-row input[type=text]{background:var(--bg3);border:1px solid var(--border);color:var(--text);
+    padding:5px 8px;border-radius:6px;font-size:12px;outline:none}
+  .vc-row input[type=text]:focus{border-color:var(--accent)}
+  .vc-row .vc-name{width:90px;flex-shrink:0}
+  .vc-row .vc-kws{flex:1;min-width:0}
+  .vc-row label{font-size:11px;color:var(--text2);display:flex;align-items:center;gap:3px;flex-shrink:0;cursor:pointer}
+  .vc-row .vc-del{cursor:pointer;color:var(--muted);font-size:15px;padding:0 4px}
+  .vc-row .vc-del:hover{color:var(--accent)}
+  .vc-actions{display:flex;gap:8px;margin-top:10px}
+  .vc-actions button{border:none;padding:6px 14px;border-radius:7px;font-size:12px;cursor:pointer}
+  .vc-actions .add{background:var(--bg4);color:var(--text2);border:1px solid var(--border)}
+  .vc-actions .save{background:var(--accent);color:#fff;font-weight:600}
+  .vc-hint{font-size:11px;color:var(--muted);margin-top:8px}
+  #chart{cursor:crosshair}
+  #chartTip{position:fixed;background:var(--bg4);border:1px solid var(--border);border-radius:8px;
+    padding:6px 10px;font-size:11px;line-height:1.7;pointer-events:none;z-index:60;display:none;
+    font-family:ui-monospace,Consolas,monospace;color:var(--text2);white-space:nowrap}
+  #chartTip b{color:var(--text);font-weight:600}
+  /* 观众画像 */
+  .aud-row{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border)}
+  .aud-row:last-child{border:0}
+  .aud-label{width:78px;flex-shrink:0;color:var(--text2);font-size:12px}
+  .aud-bar{flex:1;height:13px;border-radius:4px;overflow:hidden;display:flex;background:var(--bg4)}
+  .aud-bar i{height:100%}
+  .aud-val{width:130px;text-align:right;font-size:11px;color:var(--muted);
+    font-family:ui-monospace,Consolas,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  /* 弹幕流粉丝团筛选 */
+  #stream.f-fans .row.chat:not(.fans){display:none}
+  #stream.f-path .row.chat.fans{display:none}
+  #fansFilter button:disabled{opacity:.4;cursor:not-allowed}
 
   /* 热词 */
   .cloud{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:baseline;min-height:70px}
@@ -174,6 +213,11 @@
     <span class="si on" data-s="live"><i class="hd"></i>主源·实时</span>
     <span class="si" data-s="browser"><i class="hd"></i>备源·浏览器</span>
   </div>
+  <span class="rid" id="sess">本场 --:-- 起</span>
+  <div class="srcsw">
+    <span class="si" id="newSessBtn" title="结束当前场次并开新场,数据归档保留">新场次</span>
+    <span class="si" id="histBtn" title="查看历史场次汇总">历史场次</span>
+  </div>
   <span class="spacer"></span>
   <div class="switch">
     <input id="roomInput" placeholder="输入直播间 web_rid" spellcheck="false">
@@ -211,6 +255,8 @@
       <div class="metrics">
         <div class="metric"><div class="k">独立用户</div><div class="v c" id="m_uu">0</div>
           <div class="sub">去重</div></div>
+        <div class="metric"><div class="k">发言转化</div><div class="v b" id="m_talk">--</div>
+          <div class="sub" id="s_talk">发言人/进场人</div></div>
         <div class="metric"><div class="k">已屏蔽</div><div class="v" id="m_blocked">0</div>
           <div class="sub">工作人员等</div></div>
       </div>
@@ -220,12 +266,18 @@
   <div class="grid">
     <div class="col left">
       <div class="panel">
-        <h2><span class="bar"></span>在线人数趋势
+        <h2><span class="bar"></span>直播节奏
           <span class="r" id="rangeBtns">
             <button data-m="5">5分</button><button data-m="20" class="on">20分</button>
             <button data-m="60">1小时</button><button data-m="0">全场</button>
           </span>
         </h2>
+        <div class="voc-legend" id="mainLegend">
+          <span><i style="background:#fe2c55"></i>在线人数</span>
+          <span><i style="background:#25f4ee"></i>弹幕/分</span>
+          <span><i style="background:#4d8bff"></i>进场/分</span>
+          <span style="margin-left:auto;color:var(--muted)">点击曲线回看该分钟弹幕</span>
+        </div>
         <canvas id="chart"></canvas>
       </div>
       <div class="panel">
@@ -234,14 +286,25 @@
             <button data-m="5">5分</button><button data-m="20" class="on">20分</button>
             <button data-m="60">1小时</button><button data-m="0">全场</button>
           </span>
+          <span class="r"><button id="vocCfgBtn" title="编辑VOC分类和关键词">⚙ 配置</button></span>
         </h2>
+        <div class="voc-legend" id="vocLegend"></div>
+        <canvas id="vocChart"></canvas>
         <div class="voc" id="voc"><span class="empty">采集中…</span></div>
+      </div>
+      <div class="panel">
+        <h2><span class="bar"></span>发言观众画像 <span class="r" id="audMeta"></span></h2>
+        <div id="audience"><span class="empty">采集中…</span></div>
       </div>
     </div>
 
     <div class="col mid">
       <div class="panel stream-panel">
-        <h2><span class="bar"></span>实时弹幕流 <span class="r" id="streamCnt"></span></h2>
+        <h2><span class="bar"></span>实时弹幕流
+          <span class="r" id="fansFilter">
+            <button data-f="all" class="on">全部</button><button data-f="fans">粉丝团</button><button data-f="path">路人</button>
+          </span>
+          <span class="r" id="streamCnt"></span></h2>
         <div id="stream"><span class="empty">等待弹幕…</span></div>
       </div>
     </div>
@@ -277,6 +340,7 @@
   </div>
 </div>
 
+<div id="chartTip"></div>
 <div class="mask" id="mask"><div class="modal">
   <div class="mh"><span class="t" id="mUser"></span><span class="cnt" id="mCnt"></span>
     <button class="ban" id="mBan">屏蔽该用户</button><span class="x" id="mClose">×</span></div>
@@ -299,8 +363,10 @@ function fmtWan(n){ if(n==null) return '--'; if(n>=10000) return (n/10000).toFix
 function nowTime(){ return new Date().toTimeString().slice(0,8); }
 function touch(){ $('upd').textContent='最后更新 '+nowTime(); }
 
-fetch('/api/config').then(r=>r.json()).then(c=>{ setRid(c.web_rid); $('roomInput').value=c.web_rid; });
+fetch('/api/config').then(r=>r.json()).then(c=>{ setRid(c.web_rid); $('roomInput').value=c.web_rid; setSess(c.session_started); });
 function setRid(r){ $('rid').textContent='房间号 '+r; }
+function setSess(started){ $('sess').textContent='本场 '+(started?started.slice(11,16):'--:--')+' 起'; }
+function refreshSess(){ fetch('/api/config').then(r=>r.json()).then(c=>setSess(c.session_started)); }
 
 // ---------- 切换直播间 ----------
 function doSwitch(){ const rid=$('roomInput').value.trim(); if(!rid) return;
@@ -313,11 +379,13 @@ function resetAll(rid){
   counts={danmu:0,enter:0,likes:0,gift:0};
   ['m_danmu','m_enter','m_likes','m_gift'].forEach(i=>$(i).textContent=0);
   $('m_online').textContent='--'; $('m_total').textContent='--'; $('m_uu').textContent=0;
-  series=[]; drawChart();
+  series=[]; activity=[]; drawChart();
   $('voc').innerHTML='<span class="empty">采集新房间中…</span>';
-  $('cloud').innerHTML='<span class="empty">采集新房间中…</span>';
+  $('audience').innerHTML='<span class="empty">采集新房间中…</span>';
+  $('hotrank').innerHTML='<span class="empty">采集新房间中…</span>';
   $('users').innerHTML='<span class="empty">采集新房间中…</span>';
   $('stream').innerHTML=''; streamInited=true;
+  refreshSess();
   addRow('sys',{txt:'已切换到 '+rid+',开始采集'});
 }
 
@@ -330,6 +398,7 @@ function addRow(kind,d){
   if(d.user_id) row.dataset.uid=d.user_id;
   if(kind==='chat'){
     row.innerHTML='<span class="nick"></span><span class="txt"></span><span class="blk">屏蔽</span>';
+    if(d.fans>0) row.classList.add('fans');
     const nk=row.children[0];
     if(d.level) nk.innerHTML='<span class="lv">Lv'+d.level+'</span>';
     nk.appendChild(document.createTextNode(d.nick||''));
@@ -339,7 +408,8 @@ function addRow(kind,d){
   } else if(kind==='enter'){
     row.innerHTML='<span class="nick"></span><span class="txt">来了</span>'; row.children[0].textContent=d.nick||'';
   } else if(kind==='gift'){
-    row.innerHTML='<span class="nick"></span><span class="txt">送出礼物</span>'; row.children[0].textContent=d.nick||'';
+    row.innerHTML='<span class="nick"></span><span class="txt"></span>'; row.children[0].textContent=d.nick||'';
+    row.children[1].textContent='送出 '+(d.gift||'礼物')+(d.count>1?' ×'+d.count:'');
   } else if(kind==='sys'){
     row.innerHTML='<span class="txt"></span>'; row.children[0].textContent=d.txt||'';
   } else return;
@@ -386,6 +456,8 @@ function loadSummary(){
     $('m_danmu').textContent=s.danmu; $('m_enter').textContent=s.enter;
     $('m_likes').textContent=s.likes; $('m_gift').textContent=s.gift;
     $('m_uu').textContent=s.distinct_users;
+    $('m_talk').textContent=s.talk_rate==null?'--':(s.talk_rate*100).toFixed(1)+'%';
+    if(s.enter_users) $('s_talk').textContent='进场后开口 / '+s.enter_users+'人';
     if(s.online!=null) $('m_online').textContent=s.online;
     $('m_total').textContent=fmtWan(s.total_user);
     const rt=s.rates||{};
@@ -411,11 +483,90 @@ function loadVoc(){ fetch('/api/voc?range='+vocRangeMin).then(r=>r.json()).then(
   const el=$('voc'); const max=Math.max(1,...list.map(v=>v.count));
   if(!list.some(v=>v.count>0)){ el.innerHTML='<span class="empty">暂无问题弹幕</span>'; return; }
   el.innerHTML='';
-  list.forEach(v=>{ const row=document.createElement('div'); row.className='vr'; row.style.cursor='pointer';
+  list.forEach(v=>{ const row=document.createElement('div');
+    row.className='vr'+(v.is_risk?' risk':''); row.style.cursor='pointer';
     row.innerHTML='<span class="vn"></span><span class="vbar"><i style="width:'+(v.count/max*100)+'%"></i></span>'
       +'<span class="vc">'+v.count+'</span><span class="vrec">'+(v.recent?'<span class="hot">+'+v.recent+'</span>':'')+'</span>';
     row.children[0].textContent=v.category; row.onclick=()=>openVoc(v.category); el.appendChild(row); });
   syncHeights(); }); }
+
+// ---------- VOC 趋势 ----------
+const VOC_COLORS=['#25f4ee','#28c76f','#ffab2e','#4d8bff','#b78cff','#ff8a3d','#e6e65c'];
+let vocSeriesData=null;
+function loadVocSeries(){ fetch('/api/voc_series').then(r=>r.json()).then(d=>{ vocSeriesData=d; drawVocChart(); }); }
+function vocLineColor(cat,i){ return cat.is_risk ? '#fe2c55' : VOC_COLORS[i%VOC_COLORS.length]; }
+function drawVocChart(){
+  const cvv=$('vocChart'),cx=cvv.getContext('2d');
+  const w=cvv.clientWidth,h=cvv.clientHeight,dpr=window.devicePixelRatio||1;
+  cvv.width=w*dpr; cvv.height=h*dpr; cx.setTransform(dpr,0,0,dpr,0,0); cx.clearRect(0,0,w,h);
+  const d=vocSeriesData; $('vocLegend').innerHTML='';
+  if(!d||!d.series||d.series.length<2){ cx.fillStyle='#63636f'; cx.font='11px sans-serif';
+    cx.fillText('趋势累积中…(5分钟/桶)',4,h/2); return; }
+  // 只画有命中的分类,风险类必画
+  const totals={}; d.series.forEach(p=>{ for(const c in p.counts) totals[c]=(totals[c]||0)+p.counts[c]; });
+  const cats=d.categories.filter(c=>c.is_risk||totals[c.category]>0);
+  if(!cats.length){ cx.fillStyle='#63636f'; cx.font='11px sans-serif'; cx.fillText('暂无VOC命中',4,h/2); return; }
+  const pad={l:22,r:6,t:6,b:16},iw=w-pad.l-pad.r,ih=h-pad.t-pad.b;
+  const mx=Math.max(1,...d.series.map(p=>Math.max(...cats.map(c=>p.counts[c.category]||0))));
+  const x=i=>pad.l+iw*i/(d.series.length-1), y=v=>pad.t+ih*(1-v/mx);
+  cx.strokeStyle='#242430'; cx.lineWidth=1;
+  cx.beginPath(); cx.moveTo(pad.l,pad.t+ih); cx.lineTo(w-pad.r,pad.t+ih); cx.stroke();
+  cx.fillStyle='#63636f'; cx.font='10px monospace';
+  cx.fillText(mx,2,pad.t+8);
+  cx.fillText(d.series[0].t,pad.l,h-4); cx.textAlign='right';
+  cx.fillText(d.series[d.series.length-1].t,w-pad.r,h-4); cx.textAlign='left';
+  cats.forEach((c,ci)=>{
+    const col=vocLineColor(c,ci);
+    cx.beginPath();
+    d.series.forEach((p,i)=>{ const v=p.counts[c.category]||0; i?cx.lineTo(x(i),y(v)):cx.moveTo(x(i),y(v)); });
+    cx.strokeStyle=col; cx.lineWidth=c.is_risk?2:1.4; cx.stroke();
+    const lg=document.createElement('span');
+    lg.innerHTML='<i style="background:'+col+'"></i>';
+    lg.appendChild(document.createTextNode(c.category));
+    $('vocLegend').appendChild(lg);
+  });
+}
+
+// ---------- VOC 分类配置 ----------
+function vocCfgRow(c){
+  const row=document.createElement('div'); row.className='vc-row';
+  row.innerHTML='<input type="text" class="vc-name" placeholder="分类名">'
+    +'<input type="text" class="vc-kws" placeholder="关键词,逗号分隔">'
+    +'<label><input type="checkbox">风险</label><span class="vc-del" title="删除该分类">×</span>';
+  row.children[0].value=c&&c.category||'';
+  row.children[1].value=c&&c.keywords||'';
+  row.children[2].firstChild.checked=!!(c&&c.is_risk);
+  row.children[3].onclick=()=>row.remove();
+  return row;
+}
+function openVocConfig(){
+  curModalUser=null; $('mUser').textContent='VOC 分类配置'; $('mCnt').textContent='';
+  $('mBan').style.display='none'; $('mBody').innerHTML='<div class="empty">加载中…</div>';
+  $('mask').classList.add('show');
+  fetch('/api/voc_config').then(r=>r.json()).then(list=>{
+    const body=$('mBody'); body.innerHTML='';
+    const box=document.createElement('div');
+    list.forEach(c=>box.appendChild(vocCfgRow(c)));
+    const act=document.createElement('div'); act.className='vc-actions';
+    act.innerHTML='<button class="add">+ 添加分类</button><button class="save">保存</button>';
+    act.children[0].onclick=()=>box.appendChild(vocCfgRow());
+    act.children[1].onclick=()=>{
+      const cats=[...box.querySelectorAll('.vc-row')].map(r=>({
+        category:r.children[0].value.trim(), keywords:r.children[1].value.trim(),
+        is_risk:r.children[2].firstChild.checked}))
+        .filter(c=>c.category&&c.keywords);
+      if(!cats.length){ alert('至少保留一个分类'); return; }
+      fetch('/api/voc_config',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(cats)}).then(r=>r.json()).then(res=>{
+          if(res.ok){ $('mask').classList.remove('show'); loadVoc(); loadVocSeries(); }
+          else alert('保存失败:'+(res.msg||'')); });
+    };
+    const hint=document.createElement('div'); hint.className='vc-hint';
+    hint.textContent='弹幕命中任一关键词即计入该分类;勾选「风险」的分类红色高亮并置顶;配置跨场次保留';
+    body.appendChild(box); body.appendChild(act); body.appendChild(hint);
+  });
+}
+$('vocCfgBtn').onclick=openVocConfig;
 function openVoc(cat){
   curModalUser=null; $('mUser').textContent='VOC: '+cat; $('mCnt').textContent='';
   $('mBan').style.display='none'; $('mBody').innerHTML='<div class="empty">加载中…</div>';
@@ -451,7 +602,7 @@ function loadUsers(){ fetch('/api/top_users').then(r=>r.json()).then(list=>{
     appendTag(n, u.user_id);
     row.onclick=()=>openUser(u.user_id,u.nickname); el.appendChild(row); }); }); }
 function loadInitialDanmu(){ fetch('/api/danmu?limit=40').then(r=>r.json()).then(list=>{
-  if(list.length){ streamInited=false; list.forEach(d=>addRow('chat',{user_id:d.user_id,nick:d.nickname,txt:d.content,level:d.level})); } }); }
+  if(list.length){ streamInited=false; list.forEach(d=>addRow('chat',{user_id:d.user_id,nick:d.nickname,txt:d.content,level:d.level,fans:d.fans_level})); } }); }
 
 // ---------- 用户历史弹幕 modal ----------
 function renderRows(list, withNick){
@@ -483,6 +634,98 @@ function openWord(word){
   fetch('/api/word_danmu?word='+encodeURIComponent(word)).then(r=>r.json()).then(d=>{
     $('mCnt').textContent='共 '+d.total+' 次'; renderRows(d.danmu,true); });
 }
+// ---------- 观众画像 ----------
+function audRow(label, segs, val, title){
+  // segs: [[宽度0-1, 颜色], ...]
+  const row=document.createElement('div'); row.className='aud-row';
+  row.innerHTML='<span class="aud-label"></span><span class="aud-bar"></span><span class="aud-val"></span>';
+  row.children[0].textContent=label;
+  segs.forEach(([p,c])=>{ if(p<=0) return; const i=document.createElement('i');
+    i.style.width=(p*100)+'%'; i.style.background=c; row.children[1].appendChild(i); });
+  row.children[2].textContent=val;
+  if(title){ row.title=title; row.children[2].title=title; }
+  return row;
+}
+function loadAudience(){ fetch('/api/audience').then(r=>r.json()).then(a=>{
+  const el=$('audience');
+  if(!a.available){ el.innerHTML='<span class="empty">当前数据源无画像字段(备源采集中)</span>'; $('audMeta').textContent=''; return; }
+  $('audMeta').textContent='发言用户 '+a.speakers+' 人';
+  el.innerHTML='';
+  const fp=a.fans_danmu_pct;
+  el.appendChild(audRow('粉丝团弹幕', [[fp,'#fe2c55'],[1-fp,'#3a3a48']],
+    (fp*100).toFixed(1)+'% · '+a.fans_speakers+'人',
+    '粉丝团成员发的弹幕 '+a.fans_danmu+'/'+a.danmu_total+' 条'));
+  const LVC={'Lv30+':'#fe2c55','Lv20-29':'#ffab2e','Lv10-19':'#25f4ee','Lv1-9':'#4d8bff','未知':'#3a3a48'};
+  const lvTotal=Math.max(1,a.levels.reduce((s,x)=>s+x.count,0));
+  el.appendChild(audRow('等级分布', a.levels.map(x=>[x.count/lvTotal,LVC[x.bucket]||'#3a3a48']),
+    a.levels.filter(x=>x.count>0).map(x=>x.bucket+' '+x.count).join(' '),
+    a.levels.map(x=>x.bucket+': '+x.count+'人').join('  ')));
+  const g=a.gender, gt=Math.max(1,g.male+g.female+g.unknown);
+  el.appendChild(audRow('性别', [[g.male/gt,'#4d8bff'],[g.female/gt,'#fe2c55'],[g.unknown/gt,'#3a3a48']],
+    '男'+g.male+' 女'+g.female+(g.unknown?' 未知'+g.unknown:''),
+    '按发言用户去重'));
+  syncHeights();
+}); }
+
+// ---------- 弹幕流粉丝团筛选 ----------
+$('fansFilter').querySelectorAll('button').forEach(b=>b.onclick=()=>{
+  if(b.disabled) return;
+  $('fansFilter').querySelectorAll('button').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on');
+  $('stream').className = b.dataset.f==='fans'?'f-fans':(b.dataset.f==='path'?'f-path':'');
+});
+function setFansFilterEnabled(on){
+  $('fansFilter').querySelectorAll('button').forEach(b=>{
+    b.disabled=!on;
+    b.title=on?'':'备源无粉丝团字段,切回主源后可用';
+  });
+  if(!on){ $('stream').className='';
+    $('fansFilter').querySelectorAll('button').forEach(x=>x.classList.remove('on'));
+    $('fansFilter').querySelector('[data-f=all]').classList.add('on'); }
+}
+
+// ---------- 场次 ----------
+$('newSessBtn').onclick=()=>{
+  if(confirm('结束当前场次并开启新场?当前数据会归档保留,可在「历史场次」查看')) fetch('/api/new_session',{method:'POST'});
+};
+$('histBtn').onclick=openSessions;
+function fmtRate(r){ return r==null?'--':(r*100).toFixed(1)+'%'; }
+function openSessions(){
+  curModalUser=null; $('mUser').textContent='历史场次'; $('mCnt').textContent='';
+  $('mBan').style.display='none'; $('mBody').innerHTML='<div class="empty">加载中…</div>';
+  $('mask').classList.add('show');
+  fetch('/api/sessions').then(r=>r.json()).then(list=>{
+    const body=$('mBody');
+    if(!list.length){ body.innerHTML='<div class="empty">暂无场次</div>'; return; }
+    $('mCnt').textContent='共 '+list.length+' 场';
+    body.innerHTML='';
+    list.forEach(s=>{
+      const cur=!s.ended_at;
+      const box=document.createElement('div'); box.className='h'; box.style.display='block';
+      const t1=document.createElement('div');
+      t1.style.cssText='display:flex;align-items:center;gap:8px;margin-bottom:4px';
+      t1.innerHTML='<span style="font-weight:600"></span><span class="tm"></span>'
+        +(cur?'<span style="color:var(--green);font-size:11px">进行中</span>'
+             :'<button style="margin-left:auto;background:var(--bg4);border:1px solid var(--border);color:var(--text2);font-size:11px;padding:1px 8px;border-radius:5px;cursor:pointer">删除</button>');
+      t1.children[0].textContent='房间 '+(s.room_id||'--');
+      t1.children[1].textContent=(s.started_at||'').slice(5,16)+' ~ '+(s.ended_at?s.ended_at.slice(5,16):'');
+      if(!cur) t1.children[2].onclick=()=>{ if(confirm('删除这场的全部数据?不可恢复'))
+        fetch('/api/session/'+s.id,{method:'DELETE'}).then(()=>openSessions()); };
+      const t2=document.createElement('div');
+      t2.style.cssText='color:var(--text2);font-size:12px;line-height:1.7';
+      t2.textContent='弹幕 '+s.danmu+' · 进场 '+s.enter+' · 发言人 '+s.speakers
+        +' · 发言转化 '+fmtRate(s.talk_rate)+(s.peak_online!=null?' · 峰值在线 '+s.peak_online:'');
+      box.appendChild(t1); box.appendChild(t2);
+      if(s.voc&&s.voc.length){
+        const t3=document.createElement('div');
+        t3.style.cssText='color:var(--muted);font-size:12px';
+        t3.textContent='VOC: '+s.voc.slice(0,4).map(v=>v.category+' '+v.count).join(' / ');
+        box.appendChild(t3);
+      }
+      body.appendChild(box);
+    });
+  });
+}
 $('mClose').onclick=()=>$('mask').classList.remove('show');
 $('mask').onclick=e=>{ if(e.target===$('mask')) $('mask').classList.remove('show'); };
 $('mBan').onclick=()=>{ if(curModalUser){ blockUser(curModalUser,$('mUser').textContent); $('mask').classList.remove('show'); } };
@@ -506,39 +749,116 @@ $('vocRange').querySelectorAll('button').forEach(b=>b.onclick=()=>{
 $('wordAddBtn').onclick=addWord;
 $('wordInput').addEventListener('keydown',e=>{ if(e.key==='Enter') addWord(); });
 const cv=$('chart'),ctx=cv.getContext('2d');
+const PAD={l:42,r:14,t:14,b:22};
+let activity=[];          // {ts,t,date,danmu,enter,likes} 每分钟
+let chartView=null;       // 最近一次绘制的可视数据(hover/click用)
+let hoverX=null;
+function loadActivity(){ fetch('/api/activity_series').then(r=>r.json()).then(d=>{
+  activity=d.map(p=>({ts:Date.parse(p.date+'T'+p.t+':00'),t:p.t,date:p.date,
+    danmu:p.danmu,enter:p.enter,likes:p.likes})).filter(p=>!isNaN(p.ts));
+  drawChart(); }); }
 function drawChart(){
   const w=cv.clientWidth,h=cv.clientHeight,dpr=window.devicePixelRatio||1;
   cv.width=w*dpr; cv.height=h*dpr; ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,w,h);
-  const pad={l:42,r:14,t:14,b:22},iw=w-pad.l-pad.r,ih=h-pad.t-pad.b;
-  let data=series;
-  if(rangeMin>0){ const cut=Date.now()-rangeMin*60000; data=series.filter(p=>p.ts>=cut); }
-  if(data.length<2){ ctx.fillStyle='#63636f'; ctx.font='13px sans-serif';
+  const pad=PAD,iw=w-pad.l-pad.r,ih=h-pad.t-pad.b;
+  let data=series, act=activity;
+  if(rangeMin>0){ const cut=Date.now()-rangeMin*60000;
+    data=series.filter(p=>p.ts>=cut); act=activity.filter(p=>p.ts>=cut); }
+  chartView=null;
+  if(data.length<2&&act.length<2){ ctx.fillStyle='#63636f'; ctx.font='13px sans-serif';
     ctx.fillText('采集中,曲线累积中…',pad.l,pad.t+ih/2); return; }
-  const vals=data.map(p=>p.v); let mn=Math.min(...vals),mx=Math.max(...vals);
+  const ts0=Math.min(data.length?data[0].ts:Infinity, act.length?act[0].ts:Infinity);
+  const ts1=Math.max(data.length?data[data.length-1].ts:-Infinity, act.length?act[act.length-1].ts:-Infinity);
+  if(!(ts1>ts0)){ return; }
+  const X=t=>pad.l+iw*(t-ts0)/(ts1-ts0);
+  chartView={data,act,ts0,ts1,w,h};
+  // 左轴:在线人数
+  const vals=data.map(p=>p.v);
+  let mn=vals.length?Math.min(...vals):0, mx=vals.length?Math.max(...vals):1;
   if(mx===mn){ mx=mn+1; mn=Math.max(0,mn-1); }
-  const x=i=>pad.l+iw*i/(data.length-1), y=v=>pad.t+ih*(1-(v-mn)/(mx-mn));
+  const Y=v=>pad.t+ih*(1-(v-mn)/(mx-mn));
+  // 副轴:弹幕/进场每分钟
+  const am=Math.max(1,...act.map(p=>Math.max(p.danmu,p.enter)));
+  const Y2=v=>pad.t+ih*(1-v/am);
+  // 网格 + 左轴标签
   ctx.strokeStyle='#242430'; ctx.fillStyle='#63636f'; ctx.font='11px monospace'; ctx.lineWidth=1;
   for(let g=0;g<=3;g++){ const yy=pad.t+ih*g/3,val=Math.round(mx-(mx-mn)*g/3);
-    ctx.beginPath(); ctx.moveTo(pad.l,yy); ctx.lineTo(w-pad.r,yy); ctx.stroke(); ctx.fillText(val,6,yy+4); }
+    ctx.beginPath(); ctx.moveTo(pad.l,yy); ctx.lineTo(w-pad.r,yy); ctx.stroke();
+    if(vals.length) ctx.fillText(val,6,yy+4); }
+  // 右上角副轴刻度
+  ctx.textAlign='right'; ctx.fillText('· '+am+'/分',w-pad.r,pad.t-2); ctx.textAlign='left';
   // 时间轴两端
   const ft=t=>new Date(t).toTimeString().slice(0,5);
-  ctx.fillText(ft(data[0].ts),pad.l,h-6); ctx.textAlign='right';
-  ctx.fillText(ft(data[data.length-1].ts),w-pad.r,h-6); ctx.textAlign='left';
-  const grad=ctx.createLinearGradient(0,pad.t,0,pad.t+ih);
-  grad.addColorStop(0,'rgba(254,44,85,.26)'); grad.addColorStop(1,'rgba(254,44,85,0)');
-  ctx.beginPath(); ctx.moveTo(x(0),y(vals[0])); data.forEach((p,i)=>ctx.lineTo(x(i),y(p.v)));
-  ctx.lineTo(x(data.length-1),pad.t+ih); ctx.lineTo(x(0),pad.t+ih); ctx.closePath(); ctx.fillStyle=grad; ctx.fill();
-  ctx.beginPath(); ctx.moveTo(x(0),y(vals[0])); data.forEach((p,i)=>ctx.lineTo(x(i),y(p.v)));
-  ctx.strokeStyle='#fe2c55'; ctx.lineWidth=2; ctx.stroke();
-  // 峰值标注
-  let pi=0; vals.forEach((v,i)=>{ if(v>vals[pi]) pi=i; });
-  ctx.beginPath(); ctx.arc(x(pi),y(vals[pi]),3.5,0,7); ctx.fillStyle='var(--amber)'; ctx.fillStyle='#ffab2e'; ctx.fill();
-  ctx.fillStyle='#ffab2e'; ctx.font='11px monospace';
-  const lx=Math.min(Math.max(x(pi)-14,pad.l),w-pad.r-56);
-  ctx.fillText('峰值 '+vals[pi],lx,Math.max(y(vals[pi])-8,pad.t+10));
-  // 末点
-  const li=data.length-1; ctx.beginPath(); ctx.arc(x(li),y(vals[li]),3,0,7); ctx.fillStyle='#fe2c55'; ctx.fill();
-  $('s_online').textContent='峰值 '+Math.max(...series.map(p=>p.v));
+  ctx.fillText(ft(ts0),pad.l,h-6); ctx.textAlign='right'; ctx.fillText(ft(ts1),w-pad.r,h-6); ctx.textAlign='left';
+  // 在线:渐变面积 + 主线
+  if(data.length>=2){
+    const grad=ctx.createLinearGradient(0,pad.t,0,pad.t+ih);
+    grad.addColorStop(0,'rgba(254,44,85,.26)'); grad.addColorStop(1,'rgba(254,44,85,0)');
+    ctx.beginPath(); ctx.moveTo(X(data[0].ts),Y(data[0].v));
+    data.forEach(p=>ctx.lineTo(X(p.ts),Y(p.v)));
+    ctx.lineTo(X(data[data.length-1].ts),pad.t+ih); ctx.lineTo(X(data[0].ts),pad.t+ih);
+    ctx.closePath(); ctx.fillStyle=grad; ctx.fill();
+    ctx.beginPath(); ctx.moveTo(X(data[0].ts),Y(data[0].v));
+    data.forEach(p=>ctx.lineTo(X(p.ts),Y(p.v)));
+    ctx.strokeStyle='#fe2c55'; ctx.lineWidth=2; ctx.stroke();
+  }
+  // 副线:进场(蓝,细) + 弹幕(cyan)
+  if(act.length>=2){
+    [['enter','rgba(77,139,255,.75)',1.2],['danmu','#25f4ee',1.4]].forEach(([k,col,lw])=>{
+      ctx.beginPath();
+      act.forEach((p,i)=>{ i?ctx.lineTo(X(p.ts),Y2(p[k])):ctx.moveTo(X(p.ts),Y2(p[k])); });
+      ctx.strokeStyle=col; ctx.lineWidth=lw; ctx.stroke();
+    });
+  }
+  // 在线峰值 + 末点
+  if(data.length>=2){
+    let pi=0; vals.forEach((v,i)=>{ if(v>vals[pi]) pi=i; });
+    ctx.beginPath(); ctx.arc(X(data[pi].ts),Y(vals[pi]),3.5,0,7); ctx.fillStyle='#ffab2e'; ctx.fill();
+    const lx=Math.min(Math.max(X(data[pi].ts)-14,pad.l),w-pad.r-56);
+    ctx.fillText('峰值 '+vals[pi],lx,Math.max(Y(vals[pi])-8,pad.t+10));
+    const lp=data[data.length-1];
+    ctx.beginPath(); ctx.arc(X(lp.ts),Y(lp.v),3,0,7); ctx.fillStyle='#fe2c55'; ctx.fill();
+  }
+  // hover 竖线
+  if(hoverX!=null&&hoverX>=pad.l&&hoverX<=w-pad.r){
+    ctx.strokeStyle='rgba(236,236,242,.35)'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(hoverX,pad.t); ctx.lineTo(hoverX,pad.t+ih); ctx.stroke();
+  }
+  if(series.length) $('s_online').textContent='峰值 '+Math.max(...series.map(p=>p.v));
+}
+function chartAt(px){
+  // 像素x → 时间 → 最近的在线点/分钟桶
+  if(!chartView) return null;
+  const {data,act,ts0,ts1,w}=chartView, iw=w-PAD.l-PAD.r;
+  const t=ts0+(px-PAD.l)/iw*(ts1-ts0);
+  const near=(arr)=>{ let best=null,bd=Infinity;
+    arr.forEach(p=>{ const d=Math.abs(p.ts-t); if(d<bd){bd=d;best=p;} }); return [best,bd]; };
+  const [on,od]=near(data), [ac,ad]=near(act);
+  return {t, online:od<=60000?on:null, act:ad<=60000?ac:null};
+}
+cv.addEventListener('mousemove',e=>{
+  const r=cv.getBoundingClientRect(); hoverX=e.clientX-r.left; drawChart();
+  const hit=chartAt(hoverX), tip=$('chartTip');
+  if(!hit||(!hit.online&&!hit.act)){ tip.style.display='none'; return; }
+  let html='<b>'+new Date(hit.t).toTimeString().slice(0,5)+'</b>';
+  if(hit.online) html+='<br>在线 <b>'+hit.online.v+'</b>';
+  if(hit.act) html+='<br>弹幕 <b>'+hit.act.danmu+'</b>/分 · 进场 <b>'+hit.act.enter+'</b>/分'
+    +(hit.act.likes?'<br>点赞 <b>'+hit.act.likes+'</b>/分':'');
+  tip.innerHTML=html; tip.style.display='block';
+  tip.style.left=Math.min(e.clientX+14,window.innerWidth-170)+'px';
+  tip.style.top=(e.clientY+12)+'px';
+});
+cv.addEventListener('mouseleave',()=>{ hoverX=null; $('chartTip').style.display='none'; drawChart(); });
+cv.addEventListener('click',e=>{
+  const r=cv.getBoundingClientRect(); const hit=chartAt(e.clientX-r.left);
+  if(hit&&hit.act) openMinute(hit.act.date,hit.act.t);
+});
+function openMinute(date,minute){
+  curModalUser=null; $('mUser').textContent='弹幕回放 '+minute; $('mCnt').textContent='';
+  $('mBan').style.display='none'; $('mBody').innerHTML='<div class="empty">加载中…</div>';
+  $('mask').classList.add('show');
+  fetch('/api/danmu_at?date='+encodeURIComponent(date)+'&minute='+encodeURIComponent(minute))
+    .then(r=>r.json()).then(d=>{ $('mCnt').textContent='共 '+d.total+' 条'; renderRows(d.danmu,true); });
 }
 // 用左列(趋势+VOC)自然高度作为共用底边基准,同步中间/右列高度
 function syncHeights(){
@@ -549,7 +869,7 @@ function syncHeights(){
   if(mid) mid.style.height=H+'px';
   if(right) right.style.height=H+'px';
 }
-window.addEventListener('resize',()=>{ drawChart(); syncHeights(); });
+window.addEventListener('resize',()=>{ drawChart(); drawVocChart(); syncHeights(); });
 
 // ---------- 数据源 ----------
 function loadSources(){
@@ -560,6 +880,7 @@ function loadSources(){
       el.querySelector('.hd').classList.toggle('ok', !!(s[k] && s[k].ok));
       if(k==='live') el.title = s.live.available ? (s.live.ok?'主源正常':'主源暂无数据') : 'douyinLive 不可用';
     });
+    setFansFilterEnabled(s.active==='live');
   });
 }
 document.querySelectorAll('#srcsw .si').forEach(el=>el.onclick=()=>{
@@ -568,9 +889,9 @@ document.querySelectorAll('#srcsw .si').forEach(el=>el.onclick=()=>{
 function reloadAll(){
   counts={danmu:0,enter:0,likes:0,gift:0};
   ['m_danmu','m_enter','m_likes','m_gift'].forEach(i=>$(i).textContent=0);
-  $('m_online').textContent='--'; series=[]; drawChart();
+  $('m_online').textContent='--'; series=[]; activity=[]; drawChart();
   $('stream').innerHTML=''; streamInited=true;
-  loadSummary(); loadSeries(); loadHotrank(); loadVoc(); loadUsers(); loadInitialDanmu(); loadSources();
+  loadSummary(); loadSeries(); loadActivity(); loadHotrank(); loadVoc(); loadVocSeries(); loadUsers(); loadInitialDanmu(); loadSources(); loadAudience();
 }
 
 // ---------- WebSocket ----------
@@ -584,22 +905,27 @@ function connect(){
     else if(m.kind==='online'){ $('m_online').textContent=m.v;
       series.push({ts:Date.now(),v:m.v}); if(series.length>2000)series.shift(); drawChart(); }
     else if(m.kind==='chat'){ if(blocked.has(m.user_id))return; counts.danmu++; $('m_danmu').textContent=counts.danmu;
-      addRow('chat',{user_id:m.user_id,nick:m.nickname,txt:m.content,level:m.level}); }
+      addRow('chat',{user_id:m.user_id,nick:m.nickname,txt:m.content,level:m.level,fans:m.fans_level}); }
     else if(m.kind==='enter'){ counts.enter++; $('m_enter').textContent=counts.enter; addRow('enter',{nick:m.nickname}); }
     else if(m.kind==='like'){ counts.likes++; $('m_likes').textContent=counts.likes; }
-    else if(m.kind==='gift'){ counts.gift++; $('m_gift').textContent=counts.gift; addRow('gift',{nick:m.nickname}); }
+    else if(m.kind==='gift'){ counts.gift++; $('m_gift').textContent=counts.gift;
+      addRow('gift',{nick:m.nickname,gift:m.gift_name,count:m.count}); }
     else if(m.kind==='blocked'){ blocked.add(m.user_id); removeUserRows(m.user_id); loadBlocklist(); loadUsers(); loadHotrank(); loadVoc(); }
     else if(m.kind==='unblocked'){ blocked.delete(m.user_id); loadBlocklist(); }
-    else if(m.kind==='word_blocked'||m.kind==='word_unblocked'){ loadWordBlocklist(); loadHotrank(); loadVoc(); }
+    else if(m.kind==='word_blocked'||m.kind==='word_unblocked'){ loadWordBlocklist(); loadHotrank(); loadVoc(); loadVocSeries(); }
+    else if(m.kind==='voc_config'){ loadVoc(); loadVocSeries(); }
+    else if(m.kind==='new_session'){ setSess(m.started_at); reloadAll(); addRow('sys',{txt:'已开启新场次,此前数据已归档'}); }
     else if(m.kind==='source'){ addRow('sys',{txt:(m.auto?'主源失效,已自动切到':'已切换数据源:')+(m.source==='live'?'主源·实时':'备源·浏览器')}); reloadAll(); }
     else if(m.kind==='sys'){ addRow('sys',{txt:m.msg}); }
   };
 }
 
-loadSummary(); loadSeries(); loadHotrank(); loadVoc(); loadUsers(); loadBlocklist(); loadWordBlocklist(); loadInitialDanmu(); loadSources(); connect();
+loadSummary(); loadSeries(); loadActivity(); loadHotrank(); loadVoc(); loadVocSeries(); loadUsers(); loadBlocklist(); loadWordBlocklist(); loadInitialDanmu(); loadSources(); loadAudience(); connect();
 setTimeout(syncHeights,300); setTimeout(syncHeights,1200); setInterval(syncHeights,4000);
 setInterval(loadSummary,5000); setInterval(loadHotrank,6000); setInterval(loadVoc,5000);
-setInterval(loadUsers,7000); setInterval(loadSources,4000);
+setInterval(loadUsers,7000); setInterval(loadSources,4000); setInterval(loadVocSeries,15000);
+setInterval(loadActivity,10000); setInterval(loadAudience,10000);
+setInterval(loadSeries,10000);  // WS只推活跃源的在线值,活跃源偶发不推RoomStats时由REST合并两源兜底
 </script>
 </body>
 </html>
