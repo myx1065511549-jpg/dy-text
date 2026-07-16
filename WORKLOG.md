@@ -219,3 +219,15 @@ GitHub:源码已推(ebd10d8)。第三方 douyinLive 二进制按 docs 说明下�
 双源同时跑验证(不带 DISABLE_LIVE,BKT):主源 douyinLive 出弹幕(live 53条)、进场、在线;备源浏览器出商品(3)+讲解信号+弹幕;active=live 时前端显示主源弹幕,商品面板照常(商品数据不分源存)。product 表 room_id 存 web_rid。
 
 遗留:dist/ 是旧版打包,exe 需重新打包才含商品功能(打包链路不动,纯代码改动)。临时验证脚本已清理,登录工具 login_capture.py 保留(前端引导入口),collector_products.py 为新增采集模块。
+
+## 2026-07-16 15:20
+
+主播话术文字(ASR)可行性评估:实测走通,结论留档 `docs/eval-20260716-主播话术ASR可行性.md`,暂不开发。
+
+做了什么:
+- 实测直播流可拉:备源页面抓播放器现请求的签名 flv 地址(stream-..._ld.flv?expire=&sign=/auth_key=),ffmpeg(imageio-ffmpeg 静态二进制)流式拉40秒抽出16k单声道音频。之前直接GET 403 是用了HTML里过期占位地址;直接拉超时是无限流特性非被拒。
+- 实测识别质量优秀:funasr paraformer-zh+vad+punc 转 BKT护腰坐垫带货话术,含BGM,完整准确带标点,推销逻辑连贯。离线整段 RTF=0.07(40秒推理2.8秒,CPU远快于实时)。
+- 选型:本地 funasr(用户定,免费但吃机器)。云ASR(讯飞/阿里/腾讯约¥2-4/小时/路)作备选。
+- 结论:技术走得通,识别够用,但是四项里最重(持续算力+ffmpeg/ASR依赖+断流/签名/降噪工程),建议单独立项。价值点:话术合规扫描(极限词标红)、话术×商品、话术×弹幕对齐。
+
+坑:装 funasr 连带升 protobuf 到7.x + transformers 等;已验证 douyin proto roundtrip + 17测试照常,没搞坏。装了 imageio-ffmpeg/funasr/torch/torchaudio(CPU),模型约3-4GB在 modelscope 缓存。实时管线代码未写,仅离线验证。
