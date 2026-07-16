@@ -17,6 +17,8 @@
 - `src/server.py` FastAPI主服务：双采集器调度、REST/WS、备源worker子进程管理、健康监控自动切源
 - `src/collector_live.py` 主源：douyinLive.exe子进程（端口1088）+ WS解JSON
 - `src/collector_browser.py` + `src/parse.py` 备源：Playwright无头hook WebSocket + 自写proto解析，跑在独立子进程（`server.py --browser-worker`），记录POST回`/internal/recs`
+- `src/collector_products.py` 商品采集：登录态page里fetch `/live/promotions/page/`，**借抖音签名SDK（byted_acrawler）自动补a_bogus，不用逆向签名**。browser worker加载登录态`src/auth_state.local.json`后每3分钟fetch刷新商品字典；WS的`WebcastLiveShoppingMessage` field3=讲解商品id。**商品/讲解只有备源（登录态浏览器）能采，主源douyinLive没有；未登录则商品链路降级不工作**
+- `login_capture.py`（项目根）扫码登录工具：有头浏览器（`channel=chrome/msedge`）扫码存登录态到`src/auth_state.local.json`（gitignore）。看板未登录时引导用户跑它
 - `src/store.py` SQLite读写与迁移；`src/stats.py` 全部聚合统计
 - `src/web/dashboard.html` 看板主页面，单文件内联CSS/JS
 
@@ -26,6 +28,7 @@
 - `gift`: gift_name, repeat_count + 通用列；`enter`/`likes`: 通用列（likes多count）
 - `room_stat`: online_count快照；`meta`: key-value（total_user累计场观等）
 - `blocklist` / `word_blocklist`: 屏蔽名单，不随数据清理
+- `product`: 商品字典（product_id/promotion_id/title/price分/idx/cover），登录态定时fetch刷新，`UNIQUE(session_id,product_id)` upsert；`explain_event`: 讲解信号打点（product_id/status/ts），换品才存一条（心跳去重）
 
 加列走`store.py`的`_MIGRATIONS`列表（ALTER TABLE补列，兼容旧库），不要改CREATE TABLE后指望旧库自动变。
 

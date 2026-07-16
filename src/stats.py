@@ -394,3 +394,130 @@ def sessions_summary(conn, limit=30):
                     sorted(voc_counts.items(), key=lambda x: x[1], reverse=True) if n > 0],
         })
     return out
+
+
+# ---------------- 商品讲解联动 ----------------
+def products(conn, session_id=None):
+    """本场商品字典(product_id -> 名/价/序号),price 为分。"""
+    if session_id is None:
+        session_id = _cur_session(conn)
+    rows = conn.execute(
+        "SELECT product_id, title, price, idx, cover FROM product WHERE session_id=? ORDER BY idx",
+        (session_id,)).fetchall()
+    return [{"product_id": a, "title": b, "price": c, "idx": d, "cover": e}
+            for a, b, c, d, e in rows]
+
+
+def _parse_dt(s):
+    try:
+        return datetime.datetime.strptime(s, "%Y-%m-%d %H:%M:%S")
+    except Exception:
+        return None
+
+
+def explain_timeline(conn, session_id=None):
+    """讲解时间轴:每段在讲哪个商品(含名/价),起止与时长。
+    段由 explain_event(换品打点)切分,末段延到现在(仍在讲)。"""
+    if session_id is None:
+        session_id = _cur_session(conn)
+    evs = conn.execute(
+        "SELECT product_id, created_at FROM explain_event WHERE session_id=? ORDER BY id",
+        (session_id,)).fetchall()
+    if not evs:
+        return []
+    pmap = {p["product_id"]: p for p in products(conn, session_id)}
+    now = datetime.datetime.now()
+    segs = []
+    for i, (pid, start) in enumerate(evs):
+        end = evs[i + 1][1] if i + 1 < len(evs) else None
+        sdt, edt = _parse_dt(start), (_parse_dt(end) if end else now)
+        dur = int((edt - sdt).total_seconds()) if sdt and edt else None
+        info = pmap.get(pid, {})
+        segs.append({
+            "product_id": pid, "title": info.get("title"), "price": info.get("price"),
+            "idx": info.get("idx"), "start": start, "end": end,
+            "duration_sec": dur, "ongoing": end is None,
+        })
+    return segs
+
+
+def product_stats(conn, source=None, session_id=None):
+    """全场商品(商品栏) + 每个商品的讲解时长/讲解期间弹幕数/VOC分类命中。商品×舆情联动核心。
+    未讲解的商品也列出(时长/弹幕为0),讲解中的排前面高亮由前端处理。"""
+    if session_id is None:
+        session_id = _cur_session(conn)
+    prods = products(conn, session_id)
+    segs = explain_timeline(conn, session_id)
+    if not prods and not segs:
+        return []
+    cats = _voc_cats(conn)
+    risk_map = {c: r for c, _, r in cats}
+    bw = _blocked_words(conn)
+    now = datetime.datetime.now()
+    agg = {}
+    # 先铺全部商品栏商品(未讲解的也在)
+    for p in prods:
+        agg[p["product_id"]] = {
+            "product_id": p["product_id"], "title": p["title"], "price": p["price"],
+            "idx": p["idx"], "explain_sec": 0, "danmu": 0, "voc": {c: 0 for c, _, _ in cats}}
+    windows = []  # (product_id, start_dt, end_dt)
+    for s in segs:
+        pid = s["product_id"]
+        a = agg.setdefault(pid, {
+            "product_id": pid, "title": s["title"], "price": s["price"], "idx": s["idx"],
+            "explain_sec": 0, "danmu": 0, "voc": {c: 0 for c, _, _ in cats}})
+        if s["duration_sec"]:
+            a["explain_sec"] += s["duration_sec"]
+        sdt = _parse_dt(s["start"])
+        edt = _parse_dt(s["end"]) if s["end"] else now
+        if sdt and edt:
+            windows.append((pid, sdt, edt))
+    sc, sp = _scope(conn, source, session_id)
+    for content, created in conn.execute(
+            f"SELECT content, created_at FROM danmu WHERE {NB}{sc}", sp):
+        if not content or any(b in content for b in bw):
+            continue
+        cdt = _parse_dt(created)
+        if not cdt:
+            continue
+        for pid, sdt, edt in windows:
+            if sdt <= cdt < edt:
+                a = agg[pid]
+                a["danmu"] += 1
+                for cat, kws, _ in cats:
+                    if any(k in content for k in kws):
+                        a["voc"][cat] += 1
+                break
+    out = []
+    for a in agg.values():
+        a["voc"] = [{"category": c, "count": n, "is_risk": risk_map.get(c, False)}
+                    for c, n in a["voc"].items() if n > 0]
+        a["voc"].sort(key=lambda x: (not x["is_risk"], -x["count"]))
+        out.append(a)
+    out.sort(key=lambda x: (x["idx"] if x["idx"] is not None else 999))
+    return out
+
+
+def product_danmu(conn, product_id, limit=300, source=None, session_id=None):
+    """某商品讲解期间的弹幕原文(点击商品回看)。"""
+    if session_id is None:
+        session_id = _cur_session(conn)
+    pid = str(product_id)
+    segs = [s for s in explain_timeline(conn, session_id) if s["product_id"] == pid]
+    if not segs:
+        return {"product_id": pid, "total": 0, "danmu": []}
+    now = datetime.datetime.now()
+    windows = [(_parse_dt(s["start"]), _parse_dt(s["end"]) if s["end"] else now) for s in segs]
+    sc, sp = _scope(conn, source, session_id)
+    bw = _blocked_words(conn)
+    out = []
+    for nick, content, created in conn.execute(
+            f"SELECT nickname, content, created_at FROM danmu WHERE {NB}{sc} ORDER BY id DESC", sp):
+        if not content or any(b in content for b in bw):
+            continue
+        cdt = _parse_dt(created)
+        if cdt and any(a and b and a <= cdt < b for a, b in windows):
+            out.append({"nickname": nick, "content": content, "created_at": created})
+            if len(out) >= limit:
+                break
+    return {"product_id": pid, "total": len(out), "danmu": out}

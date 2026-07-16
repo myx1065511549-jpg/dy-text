@@ -163,3 +163,59 @@ GitHub:源码已推(ebd10d8)。第三方 douyinLive 二进制按 docs 说明下�
 ## 2026-07-13 12:10
 
 修在线人数折线消失:douyinLive偶发整场只推1条RoomStats(弹幕/进场正常,仅在线人数消息断供),而在线序列按活跃源过滤,主源活跃时序列只剩1个点画不成线。根因是设计问题:在线人数是房间级数据,两源报同一个值,按源过滤只对用户级数据防重复计数有意义。修复:online_series/summary当前在线/场次峰值全部改为只按session过滤不按source过滤;前端loadSeries加10秒轮询兜底(WS仍只推活跃源)。加1例跨源合并测试,14 passed,浏览器canvas像素级验证红线恢复。
+
+## 2026-07-16 01:33
+
+商品讲解联动:技术可行性验证完成,结论全通,可开工。目标是把"正在讲解的商品/商品栏商品"接进看板,和弹幕/VOC做联动分析。
+
+验证结论(都有BKT直播间实测证据):
+- 讲解信号:WS `WebcastLiveShoppingMessage` field3 = 正在讲解的product_id(实测3683242605367394782),field2=讲解状态,每5秒一条心跳,换品时id变。游客态/headless稳定可拿,现有browser worker加个解析即可。深挖过嵌套字段,消息里只有id没有商品名。
+- 商品字典(id→名/价):登录态page里fetch `POST /live/promotions/page/`(offset/limit),返回200+完整商品列表(promotions[]数组,每项有product_id/promotion_id/title/min_price/idx/cover)。本场3品实测:护腰坐垫¥168等。价格是分为单位(16800=¥168)。
+- **a_bogus不用逆向**:登录态page里直接fetch,抖音签名SDK(window.byted_acrawler)自动补a_bogus+msToken。只管发请求,签名它自己加,抖音改算法也不影响。headless登录态就能fetch(有头只用于首次扫码)。
+- id对齐:WS的product_id 与 商品列表product_id 完全一致,实测ws_id_in_list=True。
+
+踩坑/关键事实:
+- headless下抖音直播页是精简版,讲解弹窗/商品浮层组件不初始化,商品REST接口不主动请求;但页面签名SDK(byted_acrawler)照常加载,所以headless里手动fetch商品接口能借SDK签名成功。这是绕过反自动化的关键。
+- 商品接口全集:`POST /live/promotions/page/`(列表)、`GET /live/promotions/pop/v3/`(当前讲解弹窗)、`GET /live/promotions/page/get/`(单品详情,带productId)。
+- page里fetch有偶发返空(网络抖动),要加重试。
+- 登录:有头chromium环境spawn不了(无桌面会话),扫码登录须在用户交互桌面跑;完整chromium没装,用系统Chrome/Edge(channel="chrome"/"msedge")。登录态存 auth_state.local.json(gitignore已排除)。
+
+方案:browser worker加载storage_state后,①WS解析加LiveShoppingMessage→讲解事件打点;②定时(每3分钟)fetch商品列表刷新字典。新增product/explain_event两表。stats加每品讲解时长/商品×VOC交叉。前端节奏时间轴下方加讲解商品轨+点击看该品讲解期弹幕/VOC。首次登录做成看板"抖音登录"扫码引导,过期提示重扫。
+
+验证脚本(scratchpad,临时):login_capture/grab_products(项目根,待整理转正为登录模块)、verify_fetch/dump_body/final_verify等。
+
+## 2026-07-16 02:12
+
+商品讲解联动:后端全链路实现完成并真实直播间端到端验证通过。前端(讲解商品轨/商品×VOC)待做。
+
+做了什么:
+- store.py:新增 product 表(session_id+product_id 唯一,upsert)、explain_event 表;save_products/products 方法;explain 事件按 product_id 变化去重打点(每5秒心跳只在换品时存一条);delete_session 连带清理两张新表。
+- parse.py:新增 _pb_top_fields 裸解 protobuf 顶层字段;parse_records 加 WebcastLiveShoppingMessage 分支,取 field3=product_id/field2=status/field33=ts,产出 type=explain 记录。
+- collector_products.py(新):登录态 page 里 fetch POST /live/promotions/page/,byted_acrawler 自动签名;build_page_url(指纹参数常量+运行时补 room_id/author_id/webid/uifid)、parse_promotions、fetch_products(偶发返空重试2次)。
+- collector_browser.collect:加 storage_state/on_products/product_interval 参数;登录态则 page.on(request) 捞会话参数(room_id/author_id/webid/uifid),循环里每 180s fetch 一次商品列表回调。
+- server.py:AUTH_STATE 常量(=_DATA_DIR/auth_state.local.json,与 danmu.db 同目录);handle_record 处理 products(save_products+推前端)/explain(补 room_id+推前端);run_browser_worker 传 storage_state=AUTH_STATE + on_products;新增 REST:/api/products、/api/explain_timeline、/api/product_stats、/api/login_status。
+- stats.py:products(商品字典)、explain_timeline(讲解分段+时长,末段延到现在)、product_stats(每商品讲解时长/期间弹幕数/VOC分类命中,商品×舆情联动核心)。
+- 测试:test_store 加 products_dict/explain_dedup,test_stats 加 product_explain_linkage(讲解时间轴切窗口、弹幕/VOC 归入对应商品),共 17 passed。
+
+端到端验证(DISABLE_LIVE 起 server 连 BKT 直播间):/api/products 返回真实3个商品(护腰坐垫¥168×2、露营三件套¥0);explain_event 收到讲解信号(护腰坐垫 product_id,status=2);/api/explain_timeline 出1段 ongoing;/api/product_stats 该品 explain_sec 累加、讲解期弹幕归入。登录态从 src/auth_state.local.json 读(login_capture.py 已改存到 src/)。
+
+坑:collector_browser 用 p.chromium.launch(headless=True) 无 channel,走已装的 chromium_headless_shell(完整 chromium 未装);登录态商品 fetch 在 headless shell 里正常(签名 SDK 照常加载)。有头(扫码登录)才需 channel=chrome/msedge。
+
+## 2026-07-16 11:49
+
+商品讲解联动:前端做完 + 多房间/双源真实验证通过,功能全链路交付。
+
+前端(dashboard.html):
+- 左列「直播节奏」下新增「商品讲解」面板:全商品栏列出(未讲解也在,单行紧凑),讲解中商品红色高亮+脉冲徽标,展开显示讲解时长/讲解期弹幕数/VOC分类标签(风险类标红)。点商品行弹 #mask 看该品讲解期弹幕原文。面板 max-height:280px 内部滚动,不撑长左列。
+- 登录降级:未登录显示「运行 python login_capture.py 扫码」引导;房间无商品显示「本场暂无商品讲解数据」。
+- WS 加 explain(换品才刷新高亮)/products(刷新字典)两类事件;loadProducts 并行拉 login_status+product_stats+explain_timeline;reloadAll/初始/15秒轮询/切房间 resetAll 全接上。
+- stats.product_stats 改为从商品字典铺全部商品(未讲解的时长/弹幕为0),不再只列讲解过的;voc 项带 is_risk;新增 stats.product_danmu + /api/product_danmu(点击回看)。
+
+换房间验证(3个真实房间,动态捞 room_id/author_id/webid,无任何硬编码):
+- BKT(292525714929):3商品,讲解护腰坐垫90秒48弹幕,VOC命中链接下单/尺码型号/质量效果 ✓
+- SKG(424013057134):11商品全抓到(¥1599按摩仪等) ✓
+- 汉堡王(840483429274):PC端无小黄车,fetch_ok=true 但 promotions 空,优雅降级(边界:手机挂车PC不挂的房间抓不到,暂不处理)
+
+双源同时跑验证(不带 DISABLE_LIVE,BKT):主源 douyinLive 出弹幕(live 53条)、进场、在线;备源浏览器出商品(3)+讲解信号+弹幕;active=live 时前端显示主源弹幕,商品面板照常(商品数据不分源存)。product 表 room_id 存 web_rid。
+
+遗留:dist/ 是旧版打包,exe 需重新打包才含商品功能(打包链路不动,纯代码改动)。临时验证脚本已清理,登录工具 login_capture.py 保留(前端引导入口),collector_products.py 为新增采集模块。

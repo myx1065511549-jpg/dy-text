@@ -95,6 +95,26 @@
   #vocChart{height:92px;margin-bottom:6px}
   .voc-legend{display:flex;flex-wrap:wrap;gap:3px 10px;font-size:11px;color:var(--text2);margin-bottom:4px}
   .voc-legend i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:4px}
+  /* 商品讲解 */
+  #products{max-height:280px;overflow-y:auto}
+  #products .pr{padding:5px 2px;border-bottom:1px solid var(--border);cursor:pointer;border-radius:6px}
+  #products .pr:last-child{border-bottom:0}
+  #products .pr:hover{background:var(--bg3)}
+  #products .pr.now{background:rgba(254,44,85,.08)}
+  .pr-top{display:flex;align-items:center;gap:8px}
+  .pr-idx{width:18px;height:18px;flex-shrink:0;border-radius:4px;background:var(--bg4);color:var(--text2);
+    font-size:10px;display:flex;align-items:center;justify-content:center;font-family:ui-monospace,monospace}
+  .pr.now .pr-idx{background:var(--accent);color:#fff}
+  .pr-name{flex:1;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pr-price{color:var(--amber);font-size:11.5px;font-family:ui-monospace,monospace;flex-shrink:0}
+  .pr-now-tag{font-size:10px;color:#fff;background:var(--accent);border-radius:4px;padding:0 5px;flex-shrink:0;
+    animation:pulse 1.2s infinite}
+  .pr-sub{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;margin:3px 0 0 26px;font-size:10.5px;color:var(--muted)}
+  .pr-chip{font-size:10px;padding:0 5px;border-radius:4px;background:var(--bg3);color:var(--text2)}
+  .pr-chip.risk{background:rgba(254,44,85,.15);color:var(--accent);font-weight:600}
+  .prod-gate{font-size:12px;color:var(--text2);line-height:1.8;padding:4px 2px}
+  .prod-gate code{background:var(--bg3);padding:1px 6px;border-radius:4px;color:var(--cyan);
+    font-size:11px;font-family:ui-monospace,monospace}
   /* VOC 配置编辑 */
   .vc-row{display:flex;gap:6px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border)}
   .vc-row input[type=text]{background:var(--bg3);border:1px solid var(--border);color:var(--text);
@@ -280,6 +300,10 @@
         </div>
         <canvas id="chart"></canvas>
       </div>
+      <div class="panel" id="prodPanel">
+        <h2><span class="bar"></span>商品讲解 <span class="r" id="prodMeta"></span></h2>
+        <div id="products"><span class="empty">采集中…</span></div>
+      </div>
       <div class="panel">
         <h2><span class="bar"></span>VOC 问题弹幕队列
           <span class="r" id="vocRange">
@@ -384,6 +408,7 @@ function resetAll(rid){
   $('audience').innerHTML='<span class="empty">采集新房间中…</span>';
   $('hotrank').innerHTML='<span class="empty">采集新房间中…</span>';
   $('users').innerHTML='<span class="empty">采集新房间中…</span>';
+  curExplain=null; $('products').innerHTML='<span class="empty">采集新房间中…</span>'; $('prodMeta').textContent='';
   $('stream').innerHTML=''; streamInited=true;
   refreshSess();
   addRow('sys',{txt:'已切换到 '+rid+',开始采集'});
@@ -667,6 +692,66 @@ function loadAudience(){ fetch('/api/audience').then(r=>r.json()).then(a=>{
   syncHeights();
 }); }
 
+// ---------- 商品讲解 ----------
+let curExplain=null;
+function fmtDur(s){ if(s==null) return '--'; if(s<60) return s+'秒'; const m=Math.floor(s/60),ss=s%60; return m+'分'+(ss?ss+'秒':''); }
+function fmtPrice(cents){ if(!cents) return '—'; return '¥'+(cents/100).toFixed(2).replace(/\.00$/,''); }
+function loadProducts(){
+  Promise.all([
+    fetch('/api/login_status').then(r=>r.json()),
+    fetch('/api/product_stats').then(r=>r.json()),
+    fetch('/api/explain_timeline').then(r=>r.json())
+  ]).then(([login,ps,tl])=>{
+    const el=$('products'),meta=$('prodMeta');
+    if(!login.logged_in){
+      meta.textContent='未登录';
+      el.innerHTML='<div class="prod-gate">商品分析需登录抖音账号。<br>在项目目录运行 <code>python login_capture.py</code> 扫码登录,自动生效。</div>';
+      syncHeights(); return;
+    }
+    const prods=(ps.products)||[];
+    const seg=(tl.timeline||[]).slice(-1)[0];
+    const nowId=curExplain||(seg&&seg.ongoing?seg.product_id:null);
+    if(!prods.length){
+      meta.textContent='已登录';
+      el.innerHTML='<div class="prod-gate">本场暂无商品讲解数据。<br>(房间未挂车,或讲解尚未开始)</div>';
+      syncHeights(); return;
+    }
+    meta.textContent=prods.length+' 个商品';
+    el.innerHTML='';
+    prods.forEach(p=>{
+      const isNow=p.product_id===nowId;
+      const row=document.createElement('div'); row.className='pr'+(isNow?' now':'');
+      const top=document.createElement('div'); top.className='pr-top';
+      top.innerHTML='<span class="pr-idx"></span><span class="pr-name"></span>'
+        +(isNow?'<span class="pr-now-tag">讲解中</span>':'')+'<span class="pr-price"></span>';
+      top.children[0].textContent=p.idx||'-';
+      top.children[1].textContent=p.title||p.product_id;
+      top.querySelector('.pr-price').textContent=fmtPrice(p.price);
+      row.appendChild(top);
+      // 讲解过的才展开第二行(时长/弹幕/VOC),未讲解的保持单行紧凑
+      const explained=p.explain_sec>0||p.danmu>0||(p.voc&&p.voc.length);
+      if(explained){
+        const sub=document.createElement('div'); sub.className='pr-sub';
+        sub.appendChild(Object.assign(document.createElement('span'),{textContent:'讲解 '+fmtDur(p.explain_sec)}));
+        sub.appendChild(Object.assign(document.createElement('span'),{textContent:'弹幕 '+p.danmu}));
+        (p.voc||[]).forEach(v=>{ const c=document.createElement('span');
+          c.className='pr-chip'+(v.is_risk?' risk':''); c.textContent=v.category+' '+v.count; sub.appendChild(c); });
+        row.appendChild(sub);
+      }
+      row.onclick=()=>openProduct(p.product_id,p.title);
+      el.appendChild(row);
+    });
+    syncHeights();
+  }).catch(()=>{});
+}
+function openProduct(pid,title){
+  curModalUser=null; $('mUser').textContent='讲解回看: '+(title||pid); $('mCnt').textContent='';
+  $('mBan').style.display='none'; $('mBody').innerHTML='<div class="empty">加载中…</div>';
+  $('mask').classList.add('show');
+  fetch('/api/product_danmu?product_id='+encodeURIComponent(pid)).then(r=>r.json()).then(d=>{
+    $('mCnt').textContent='讲解期间 '+d.total+' 条弹幕'; renderRows(d.danmu,true); });
+}
+
 // ---------- 弹幕流粉丝团筛选 ----------
 $('fansFilter').querySelectorAll('button').forEach(b=>b.onclick=()=>{
   if(b.disabled) return;
@@ -891,7 +976,7 @@ function reloadAll(){
   ['m_danmu','m_enter','m_likes','m_gift'].forEach(i=>$(i).textContent=0);
   $('m_online').textContent='--'; series=[]; activity=[]; drawChart();
   $('stream').innerHTML=''; streamInited=true;
-  loadSummary(); loadSeries(); loadActivity(); loadHotrank(); loadVoc(); loadVocSeries(); loadUsers(); loadInitialDanmu(); loadSources(); loadAudience();
+  loadSummary(); loadSeries(); loadActivity(); loadHotrank(); loadVoc(); loadVocSeries(); loadUsers(); loadInitialDanmu(); loadSources(); loadAudience(); loadProducts();
 }
 
 // ---------- WebSocket ----------
@@ -914,18 +999,21 @@ function connect(){
     else if(m.kind==='unblocked'){ blocked.delete(m.user_id); loadBlocklist(); }
     else if(m.kind==='word_blocked'||m.kind==='word_unblocked'){ loadWordBlocklist(); loadHotrank(); loadVoc(); loadVocSeries(); }
     else if(m.kind==='voc_config'){ loadVoc(); loadVocSeries(); }
+    else if(m.kind==='explain'){ if(m.product_id!==curExplain){ curExplain=m.product_id; loadProducts(); } }
+    else if(m.kind==='products'){ loadProducts(); }
     else if(m.kind==='new_session'){ setSess(m.started_at); reloadAll(); addRow('sys',{txt:'已开启新场次,此前数据已归档'}); }
     else if(m.kind==='source'){ addRow('sys',{txt:(m.auto?'主源失效,已自动切到':'已切换数据源:')+(m.source==='live'?'主源·实时':'备源·浏览器')}); reloadAll(); }
     else if(m.kind==='sys'){ addRow('sys',{txt:m.msg}); }
   };
 }
 
-loadSummary(); loadSeries(); loadActivity(); loadHotrank(); loadVoc(); loadVocSeries(); loadUsers(); loadBlocklist(); loadWordBlocklist(); loadInitialDanmu(); loadSources(); loadAudience(); connect();
+loadSummary(); loadSeries(); loadActivity(); loadHotrank(); loadVoc(); loadVocSeries(); loadUsers(); loadBlocklist(); loadWordBlocklist(); loadInitialDanmu(); loadSources(); loadAudience(); loadProducts(); connect();
 setTimeout(syncHeights,300); setTimeout(syncHeights,1200); setInterval(syncHeights,4000);
 setInterval(loadSummary,5000); setInterval(loadHotrank,6000); setInterval(loadVoc,5000);
 setInterval(loadUsers,7000); setInterval(loadSources,4000); setInterval(loadVocSeries,15000);
 setInterval(loadActivity,10000); setInterval(loadAudience,10000);
 setInterval(loadSeries,10000);  // WS只推活跃源的在线值,活跃源偶发不推RoomStats时由REST合并两源兜底
+setInterval(loadProducts,15000);  // 商品讲解时长/讲解期弹幕数随时间刷新
 </script>
 </body>
 </html>

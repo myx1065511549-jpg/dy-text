@@ -259,7 +259,52 @@ def test_summary_talk_rate():
     os.remove(db)
 
 
+def test_product_explain_linkage():
+    """商品×讲解联动:讲解时间轴切窗口,弹幕/VOC归入对应商品。"""
+    db, s = _mk()
+    s.current_session("1")
+    s.save_products("1", [
+        {"product_id": "p1", "title": "护腰坐垫", "price": 16800, "idx": 1},
+        {"product_id": "p2", "title": "露营三件套", "price": 9900, "idx": 2},
+    ])
+    # 讲解:p1 -> p2 -> 回讲p1(第三条把p2窗口封口,不依赖"现在"时间)
+    s.save({"type": "explain", "room_id": "1", "product_id": "p1", "status": 2})
+    s.save({"type": "explain", "room_id": "1", "product_id": "p2", "status": 2})
+    s.save({"type": "explain", "room_id": "1", "product_id": "p1", "status": 2})
+    # 弹幕:p1期间2条(含1条价格VOC),p2期间1条(含1条风险VOC)
+    _chat(s, "u1", "多少钱一个")   # 价格
+    _chat(s, "u2", "主播好")
+    _chat(s, "u3", "这是假货吧")   # 风险
+    s.commit()
+    # 排时间:p1@10:00 p2@10:05 p1@10:10;弹幕 u1/u2@10:02(p1窗口) u3@10:06(p2窗口)
+    ev = [r[0] for r in s.conn.execute("SELECT id FROM explain_event ORDER BY id").fetchall()]
+    for i, t in zip(ev, ["2026-07-16 10:00:00", "2026-07-16 10:05:00", "2026-07-16 10:10:00"]):
+        s.conn.execute("UPDATE explain_event SET created_at=? WHERE id=?", (t, i))
+    dm = [r[0] for r in s.conn.execute("SELECT id FROM danmu ORDER BY id").fetchall()]
+    for i, t in zip(dm, ["2026-07-16 10:02:00", "2026-07-16 10:02:30", "2026-07-16 10:06:00"]):
+        s.conn.execute("UPDATE danmu SET created_at=? WHERE id=?", (t, i))
+    s.commit()
+
+    tl = stats.explain_timeline(s.conn)
+    assert len(tl) == 3
+    assert tl[0]["product_id"] == "p1" and tl[0]["title"] == "护腰坐垫"
+    assert tl[0]["duration_sec"] == 300  # 10:00->10:05
+    assert tl[1]["product_id"] == "p2" and tl[1]["duration_sec"] == 300  # 10:05->10:10
+    assert tl[2]["ongoing"] is True
+
+    ps = {p["product_id"]: p for p in stats.product_stats(s.conn, "live")}
+    assert ps["p1"]["danmu"] == 2 and ps["p2"]["danmu"] == 1
+    assert ps["p2"]["explain_sec"] == 300  # p2窗口封闭,不受"现在"影响
+    v1 = {v["category"]: v["count"] for v in ps["p1"]["voc"]}
+    v2 = {v["category"]: v["count"] for v in ps["p2"]["voc"]}
+    assert v1.get("价格优惠") == 1 and "风险负面" not in v1
+    assert v2.get("风险负面") == 1
+    s.close()
+    os.remove(db)
+
+
 if __name__ == "__main__":
+    test_product_explain_linkage()
     test_stats_scoped_to_current_session()
     test_stats_source_filter_no_double_count()
     test_sessions_summary()

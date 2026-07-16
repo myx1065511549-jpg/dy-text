@@ -83,8 +83,56 @@ def test_new_session_resets_total_user():
     os.remove(db)
 
 
+def test_products_dict():
+    """商品字典 upsert:同 product_id 更新不新增,按 idx 排序,归当前场次。"""
+    db = tempfile.mktemp(suffix=".db")
+    s = Store(db)
+    s.current_session("1")
+    s.save_products("1", [
+        {"product_id": "p2", "title": "商品二", "price": 8800, "idx": 2},
+        {"product_id": "p1", "title": "商品一", "price": 16800, "idx": 1},
+    ])
+    ps = s.products()
+    assert [p["product_id"] for p in ps] == ["p1", "p2"]  # 按 idx 排序
+    assert ps[0]["title"] == "商品一" and ps[0]["price"] == 16800
+    # 改价+上新品:同id更新,新id新增
+    s.save_products("1", [
+        {"product_id": "p1", "title": "商品一改", "price": 9900, "idx": 1},
+        {"product_id": "p3", "title": "商品三", "price": 100, "idx": 3},
+    ])
+    ps = s.products()
+    assert len(ps) == 3
+    assert next(p for p in ps if p["product_id"] == "p1")["title"] == "商品一改"
+    # 新场次商品字典独立
+    s.new_session("1")
+    assert s.products() == []
+    s.close()
+    os.remove(db)
+
+
+def test_explain_dedup():
+    """讲解信号每5秒一条心跳,只在换品时打点。"""
+    db = tempfile.mktemp(suffix=".db")
+    s = Store(db)
+    s.current_session("1")
+    for _ in range(3):
+        s.save({"type": "explain", "room_id": "1", "product_id": "p1", "status": 2, "ts": 1})
+    s.save({"type": "explain", "room_id": "1", "product_id": "p2", "status": 2, "ts": 2})
+    s.save({"type": "explain", "room_id": "1", "product_id": "p2", "status": 2, "ts": 3})
+    s.save({"type": "explain", "room_id": "1", "product_id": "p1", "status": 2, "ts": 4})
+    s.commit()
+    rows = s.conn.execute(
+        "SELECT product_id FROM explain_event ORDER BY id").fetchall()
+    # p1(3条合1) -> p2(2条合1) -> p1(回讲再打1)
+    assert [r[0] for r in rows] == ["p1", "p2", "p1"]
+    s.close()
+    os.remove(db)
+
+
 if __name__ == "__main__":
     test_store_roundtrip()
     test_session_archive()
     test_new_session_resets_total_user()
+    test_products_dict()
+    test_explain_dedup()
     print("test_store OK")

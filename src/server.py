@@ -46,6 +46,8 @@ WEB_DIR = _res("web")
 WEB_RID = os.environ.get("DY_WEB_RID", "292525714929")
 _DATA_DIR = os.path.dirname(sys.executable) if _FROZEN else _BASE
 DB_PATH = os.environ.get("DY_DB", os.path.join(_DATA_DIR, "danmu.db"))
+# 抖音登录态(扫码后存,商品采集用);不在则商品链路降级不工作
+AUTH_STATE = os.environ.get("DY_AUTH_STATE", os.path.join(_DATA_DIR, "auth_state.local.json"))
 PORT = int(os.environ.get("DY_PORT", "8848"))
 
 app = FastAPI()
@@ -96,6 +98,14 @@ def handle_record(name, store, r):
             store.set_meta("total_user", r["total_user"])
             store.commit()
         return
+    if t == "products":
+        # 商品字典(登录态定时刷新):房间级数据,不分源存;活跃源时推前端
+        store.save_products(r.get("room_id") or current_rid[0], r.get("products") or [])
+        if active_source[0] == name:
+            push({"kind": "products", "products": store.products()})
+        return
+    if t == "explain":
+        r["room_id"] = r.get("room_id") or current_rid[0]
     r["source"] = name
     store.save(r)
     store.commit()
@@ -117,6 +127,8 @@ def handle_record(name, store, r):
     elif t in ("enter", "like"):
         if not blocked:
             push({"kind": t, "nickname": r.get("nickname")})
+    elif t == "explain":
+        push({"kind": "explain", "product_id": r.get("product_id"), "status": r.get("status")})
 
 
 def maybe_new_session(store, gen):
@@ -182,10 +194,7 @@ def run_browser_worker(room, port):
     """子进程入口:主线程跑浏览器采集,把记录批量 POST 给主服务。"""
     url = f"http://127.0.0.1:{port}/internal/recs"
 
-    def on_frame(raw):
-        recs = parse_records(raw)
-        if not recs:
-            return
+    def _post(recs):
         try:
             data = json.dumps(recs, ensure_ascii=False).encode("utf-8")
             req = urllib.request.Request(url, data=data,
@@ -193,7 +202,18 @@ def run_browser_worker(room, port):
             urllib.request.urlopen(req, timeout=3)
         except Exception:
             pass
-    collector_browser.collect(room, on_frame, seconds=10 ** 9)
+
+    def on_frame(raw):
+        recs = parse_records(raw)
+        if recs:
+            _post(recs)
+
+    def on_products(products):
+        _post([{"type": "products", "products": products, "room_id": room}])
+
+    # 有登录态才起商品采集(定时 fetch 商品列表);无则纯弹幕采集
+    collector_browser.collect(room, on_frame, seconds=10 ** 9,
+                              storage_state=AUTH_STATE, on_products=on_products)
 
 
 def live_impl(rid, store, should_stop):
@@ -472,6 +492,59 @@ def api_audience():
     c = _conn()
     try:
         return stats.audience(c, _src())
+    finally:
+        c.close()
+
+
+@app.get("/api/login_status")
+def api_login_status():
+    """抖音登录态是否就绪(决定商品链路能否工作)。"""
+    ok = os.path.exists(AUTH_STATE)
+    age_h = None
+    if ok:
+        try:
+            age_h = round((time.time() - os.path.getmtime(AUTH_STATE)) / 3600, 1)
+        except Exception:
+            pass
+    return {"logged_in": ok, "age_hours": age_h}
+
+
+@app.get("/api/products")
+def api_products():
+    """本场商品字典(登录态采集;未登录则为空)。"""
+    c = _conn()
+    try:
+        return {"products": stats.products(c)}
+    finally:
+        c.close()
+
+
+@app.get("/api/explain_timeline")
+def api_explain_timeline():
+    """讲解时间轴:每段在讲哪个商品、起止与时长。"""
+    c = _conn()
+    try:
+        return {"timeline": stats.explain_timeline(c)}
+    finally:
+        c.close()
+
+
+@app.get("/api/product_stats")
+def api_product_stats():
+    """每商品:讲解时长/讲解期间弹幕数/VOC分类命中(商品×舆情联动)。"""
+    c = _conn()
+    try:
+        return {"products": stats.product_stats(c, _src())}
+    finally:
+        c.close()
+
+
+@app.get("/api/product_danmu")
+def api_product_danmu(product_id: str, limit: int = 300):
+    """某商品讲解期间的弹幕原文(点击商品回看)。"""
+    c = _conn()
+    try:
+        return stats.product_danmu(c, product_id, limit, _src())
     finally:
         c.close()
 

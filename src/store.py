@@ -48,6 +48,18 @@ CREATE TABLE IF NOT EXISTS session (
 CREATE TABLE IF NOT EXISTS voc_config (
   category TEXT PRIMARY KEY, keywords TEXT, is_risk INTEGER DEFAULT 0, sort INTEGER DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS product (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  room_id TEXT, session_id INTEGER,
+  product_id TEXT, promotion_id TEXT,
+  title TEXT, price INTEGER, idx INTEGER, cover TEXT, updated_at TEXT,
+  UNIQUE(session_id, product_id)
+);
+CREATE TABLE IF NOT EXISTS explain_event (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  room_id TEXT, session_id INTEGER,
+  product_id TEXT, status INTEGER, ts INTEGER, created_at TEXT, source TEXT
+);
 """
 
 # VOC 分类默认种子(界面可编辑,存 voc_config 表,跨场次保留)。
@@ -74,6 +86,8 @@ CREATE INDEX IF NOT EXISTS idx_gift_session ON gift(session_id);
 CREATE INDEX IF NOT EXISTS idx_enter_session ON enter(session_id);
 CREATE INDEX IF NOT EXISTS idx_likes_session ON likes(session_id);
 CREATE INDEX IF NOT EXISTS idx_room_stat_session ON room_stat(session_id);
+CREATE INDEX IF NOT EXISTS idx_product_session ON product(session_id);
+CREATE INDEX IF NOT EXISTS idx_explain_session ON explain_event(session_id, ts);
 """
 
 # 给旧库补列(CREATE TABLE IF NOT EXISTS 不会给已存在的表加列)
@@ -88,7 +102,7 @@ _MIGRATIONS = [
 ]
 
 # 带场次归属的数据表(屏蔽名单和VOC配置不在其中,跨场次保留)
-_DATA_TABLES = ("danmu", "gift", "enter", "likes", "room_stat")
+_DATA_TABLES = ("danmu", "gift", "enter", "likes", "room_stat", "product", "explain_event")
 
 
 class Store:
@@ -186,12 +200,57 @@ class Store:
                 "INSERT INTO room_stat(room_id,online_count,ts,created_at,source,session_id)"
                 " VALUES(?,?,?,?,?,?)",
                 (r.get("room_id"), r.get("online_count"), r.get("ts"), now, src, sid))
+        elif t == "explain":
+            # 讲解信号每5秒一条心跳,只在换品(product_id 变化)时打一条点
+            pid = str(r.get("product_id"))
+            last = c.execute(
+                "SELECT product_id FROM explain_event WHERE session_id=? ORDER BY id DESC LIMIT 1",
+                (sid,)).fetchone()
+            if last and last[0] == pid:
+                return True
+            c.execute(
+                "INSERT INTO explain_event(room_id,session_id,product_id,status,ts,created_at,source)"
+                " VALUES(?,?,?,?,?,?,?)",
+                (r.get("room_id"), sid, pid, r.get("status"), r.get("ts"), now, src))
         else:
             return False
         return True
 
     def commit(self):
         self.conn.commit()
+
+    # ---- 商品字典(登录态定时 fetch 刷新,按场次归属) ----
+    def save_products(self, room_id, products):
+        """刷新本场商品字典。products 每项:product_id/promotion_id/title/price(分)/idx/cover。
+        按 (session_id, product_id) upsert,中途上新品或改价会更新。"""
+        sid = self.current_session(room_id)
+        now = self._now()
+        n = 0
+        for p in products:
+            pid = str(p.get("product_id") or "")
+            if not pid:
+                continue
+            self.conn.execute(
+                "INSERT INTO product(room_id,session_id,product_id,promotion_id,title,price,idx,cover,updated_at)"
+                " VALUES(?,?,?,?,?,?,?,?,?)"
+                " ON CONFLICT(session_id,product_id) DO UPDATE SET"
+                " title=excluded.title, price=excluded.price, idx=excluded.idx,"
+                " cover=excluded.cover, promotion_id=excluded.promotion_id, updated_at=excluded.updated_at",
+                (room_id, sid, pid, str(p.get("promotion_id") or pid),
+                 p.get("title"), p.get("price"), p.get("idx"), p.get("cover"), now))
+            n += 1
+        self.conn.commit()
+        return n
+
+    def products(self, session_id=None):
+        """本场商品字典(供前端把 product_id 翻译成商品名)。"""
+        if session_id is None:
+            session_id = self.current_session()
+        rows = self.conn.execute(
+            "SELECT product_id, promotion_id, title, price, idx, cover, updated_at"
+            " FROM product WHERE session_id=? ORDER BY idx", (session_id,)).fetchall()
+        return [{"product_id": a, "promotion_id": b, "title": c, "price": d,
+                 "idx": e, "cover": f, "updated_at": g} for a, b, c, d, e, f, g in rows]
 
     # ---- 累计场观等单值状态存 meta ----
     def set_meta(self, key, value):

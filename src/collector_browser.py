@@ -54,12 +54,40 @@ HOOK_JS = r"""
 
 
 def collect(web_rid: str, on_frame, seconds: int = 30, headless: bool = True,
-            should_stop=None):
+            should_stop=None, storage_state=None, on_products=None,
+            product_interval: int = 180):
     """常驻采集:每收到一个二进制帧,调 on_frame(raw_bytes)。
-    运行 seconds 秒后停;should_stop() 返回 True 时提前停(用于切换房间)。"""
+    运行 seconds 秒后停;should_stop() 返回 True 时提前停(用于切换房间)。
+
+    storage_state:登录态文件路径(存在则加载,用于抓商品)。
+    on_products:回调,每次刷新商品字典时调 on_products(products_list)。
+    product_interval:商品字典刷新间隔(秒)。"""
+    import os
     def _on_ws_frame(b64: str):
         try:
             on_frame(base64.b64decode(b64))
+        except Exception:
+            pass
+
+    # 从进房请求里捞会话参数(room_id/author_id/webid/uifid),供商品接口用
+    sess = {}
+
+    def _on_request(req):
+        try:
+            u = req.url
+            if "douyin" not in u or "?" not in u:
+                return
+            from urllib.parse import parse_qs, urlsplit
+            q = parse_qs(urlsplit(u).query)
+            for key, aliases in (("room_id", ("room_id",)),
+                                 ("author_id", ("author_id", "anchor_id")),
+                                 ("webid", ("webid",)), ("uifid", ("uifid",))):
+                if key in sess:
+                    continue
+                for a in aliases:
+                    if q.get(a) and q[a][0]:
+                        sess[key] = q[a][0]
+                        break
         except Exception:
             pass
 
@@ -68,19 +96,36 @@ def collect(web_rid: str, on_frame, seconds: int = 30, headless: bool = True,
                  "--disable-features=IsolateOrigins,site-per-process"]
         # 无头模式:任何会话(含非交互/后台)都能起,也适合打包
         browser = p.chromium.launch(headless=True, args=_args)
-        context = browser.new_context(
-            user_agent=UA, viewport={"width": 1280, "height": 800}, locale="zh-CN")
+        _ctx_kw = dict(user_agent=UA, viewport={"width": 1280, "height": 800}, locale="zh-CN")
+        logged_in = bool(storage_state and os.path.exists(storage_state))
+        if logged_in:
+            _ctx_kw["storage_state"] = storage_state
+        context = browser.new_context(**_ctx_kw)
         context.expose_function("__pyOnWsFrame", _on_ws_frame)
         context.expose_function("__pyOnWsUrl", lambda u: None)
         context.add_init_script(HOOK_JS)
         page = context.new_page()
+        if logged_in and on_products:
+            page.on("request", _on_request)
         page.goto(f"https://live.douyin.com/{web_rid}",
                   wait_until="domcontentloaded", timeout=30000)
         t0 = time.time()
+        # 首次商品拉取延后 ~15s 等签名 SDK 与进房请求就绪
+        next_fetch = t0 + 15 if (logged_in and on_products) else None
         while time.time() - t0 < seconds:
             if should_stop and should_stop():
                 break
             page.wait_for_timeout(500)
+            if next_fetch and time.time() >= next_fetch:
+                next_fetch = time.time() + product_interval
+                try:
+                    import collector_products
+                    prods, ok = collector_products.fetch_products(
+                        page, sess.get("room_id"), sess.get("author_id"), sess)
+                    if ok and prods:
+                        on_products(prods)
+                except Exception:
+                    pass
         context.close()
         browser.close()
 

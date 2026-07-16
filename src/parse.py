@@ -25,6 +25,47 @@ def _maybe_gunzip(data: bytes) -> bytes:
     return data
 
 
+def _pb_top_fields(data: bytes) -> dict:
+    """裸解 protobuf 顶层字段(不依赖 proto 定义),返回 {field_num: 首个varint值}。
+    只需 varint,够拿 LiveShoppingMessage 的 product_id(field3)/status(field2)/ts(field33)。"""
+    out = {}
+    i, n = 0, len(data)
+    while i < n:
+        tag = 0; shift = 0
+        while i < n:
+            b = data[i]; i += 1
+            tag |= (b & 0x7f) << shift
+            if not (b & 0x80):
+                break
+            shift += 7
+        fn, wt = tag >> 3, tag & 7
+        if wt == 0:
+            v = 0; shift = 0
+            while i < n:
+                b = data[i]; i += 1
+                v |= (b & 0x7f) << shift
+                if not (b & 0x80):
+                    break
+                shift += 7
+            out.setdefault(fn, v)
+        elif wt == 2:
+            ln = 0; shift = 0
+            while i < n:
+                b = data[i]; i += 1
+                ln |= (b & 0x7f) << shift
+                if not (b & 0x80):
+                    break
+                shift += 7
+            i += ln
+        elif wt == 5:
+            i += 4
+        elif wt == 1:
+            i += 8
+        else:
+            break
+    return out
+
+
 def parse_frame(raw: bytes) -> dict:
     frame = dy.PushFrame()
     frame.ParseFromString(raw)
@@ -114,6 +155,14 @@ def parse_records(raw: bytes) -> list:
                 x = dy.RoomUserSeqMessage(); x.ParseFromString(m.payload)
                 if x.totalUser:
                     records.append({"type": "total_user", "total_user": x.totalUser})
+            elif m.method == "WebcastLiveShoppingMessage":
+                # dy proto 无此消息定义,裸解顶层字段:field3=讲解商品id,field2=状态,field33=ts
+                f = _pb_top_fields(m.payload)
+                pid = f.get(3)
+                if pid and pid > 10 ** 12:
+                    records.append({"type": "explain", "room_id": "",
+                                    "product_id": str(pid), "status": f.get(2),
+                                    "ts": f.get(33) or 0})
         except Exception:
             continue
     return records
