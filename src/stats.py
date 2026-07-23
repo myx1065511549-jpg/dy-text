@@ -3,6 +3,7 @@
 避免两条采集链路同时入库造成重复计数。涉及用户的统计排除屏蔽名单。
 """
 import re
+import bisect
 import jieba
 import datetime
 from collections import Counter
@@ -495,6 +496,104 @@ def product_stats(conn, source=None, session_id=None):
         a["voc"].sort(key=lambda x: (not x["is_risk"], -x["count"]))
         out.append(a)
     out.sort(key=lambda x: (x["idx"] if x["idx"] is not None else 999))
+    return out
+
+
+# ---------------- 分析宽表(供导出/离线分析) ----------------
+# 分析口径三条铁律(实测踩过的坑):
+#   1. 默认锁单源(该场数据更全的源):双源同存同一条弹幕,不锁源会重复计数
+#   2. 时间一律用 created_at(服务端时间):ts 字段两源语义不一致(备源恒为0),不可用
+#   3. 备源无 level/fans_level/sec_uid,这些列在备源行为空,分析时注意样本量
+ANALYSIS_COLUMNS = [
+    "session_id", "session_started", "created_at", "date", "time", "hour", "minute",
+    "source", "user_id", "nickname", "level", "fans_level", "gender",
+    "content", "content_len", "is_blocked_word", "voc_categories", "is_risk",
+    "product_id", "product_title", "product_price_yuan", "online_count",
+]
+
+
+def analysis_rows(conn, session_id=None, source=None, dedup=True,
+                  include_blocked=False, limit=None):
+    """分析宽表:每条弹幕 + 当时在讲的商品 + 命中的VOC分类 + 当时在线人数。
+    source 不传时自动取该场数据更全的源(防双源重复计数);dedup 去掉完全相同的重复行。
+    include_blocked=False 默认剔除命中屏蔽词的弹幕(多为商家机器人刷屏,污染分析);
+    置 True 则全部保留,用 is_blocked_word 列自行筛选。"""
+    if session_id is None:
+        session_id = _cur_session(conn)
+    if session_id is None:
+        return []
+    if source is None:
+        source = _session_source(conn, session_id)
+    cats = _voc_cats(conn)
+    risk_map = {c: r for c, _, r in cats}
+    bw = _blocked_words(conn)
+    now = datetime.datetime.now()
+
+    # 讲解窗口:每段在讲哪个商品
+    windows = []
+    for s in explain_timeline(conn, session_id):
+        sdt = _parse_dt(s["start"])
+        edt = _parse_dt(s["end"]) if s["end"] else now
+        if sdt and edt:
+            windows.append((sdt, edt, s))
+
+    # 在线人数快照(按时间升序,取该弹幕之前最近一条)
+    onl = [(_parse_dt(t), v) for t, v in conn.execute(
+        "SELECT created_at, online_count FROM room_stat WHERE session_id=?"
+        " ORDER BY created_at", (session_id,)) if t]
+    onl = [(t, v) for t, v in onl if t]
+    onl_times = [t for t, _ in onl]
+
+    row = conn.execute("SELECT started_at FROM session WHERE id=?", (session_id,)).fetchone()
+    started = row[0] if row else None
+
+    sc, sp = _scope(conn, source, session_id)
+    rows = conn.execute(
+        f"SELECT created_at, source, user_id, nickname, level, fans_level, gender, content"
+        f" FROM danmu WHERE {NB}{sc} ORDER BY created_at, id", sp).fetchall()
+
+    out, seen = [], set()
+    for created, src, uid, nick, lv, fl, gd, content in rows:
+        if not content:
+            continue
+        blocked = any(b in content for b in bw)
+        if blocked and not include_blocked:
+            continue
+        if dedup:
+            key = (content, created, uid)
+            if key in seen:
+                continue
+            seen.add(key)
+        cdt = _parse_dt(created)
+        hits = [c for c, kws, _ in cats if any(k in content for k in kws)]
+        pid = ptitle = pprice = None
+        if cdt:
+            for sdt, edt, s in windows:
+                if sdt <= cdt < edt:
+                    pid, ptitle, pprice = s["product_id"], s["title"], s["price"]
+                    break
+        online = None
+        if cdt and onl_times:
+            i = bisect.bisect_right(onl_times, cdt) - 1
+            if i >= 0:
+                online = onl[i][1]
+        out.append({
+            "session_id": session_id, "session_started": started,
+            "created_at": created, "date": (created or "")[:10],
+            "time": (created or "")[11:], "hour": (created or "")[11:13],
+            "minute": (created or "")[11:16],
+            "source": src, "user_id": uid, "nickname": nick,
+            "level": lv, "fans_level": fl, "gender": gd,
+            "content": content, "content_len": len(content),
+            "is_blocked_word": 1 if blocked else 0,
+            "voc_categories": ",".join(hits),
+            "is_risk": 1 if any(risk_map.get(c) for c in hits) else 0,
+            "product_id": pid, "product_title": ptitle,
+            "product_price_yuan": round(pprice / 100, 2) if pprice else None,
+            "online_count": online,
+        })
+        if limit and len(out) >= limit:
+            break
     return out
 
 

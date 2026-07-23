@@ -30,6 +30,16 @@
 - `blocklist` / `word_blocklist`: 屏蔽名单，不随数据清理
 - `product`: 商品字典（product_id/promotion_id/title/price分/idx/cover），登录态定时fetch刷新，`UNIQUE(session_id,product_id)` upsert；`explain_event`: 讲解信号打点（product_id/status/ts），换品才存一条（心跳去重）
 
+## 分析口径（导出/离线分析必守，实测踩过）
+
+`stats.analysis_rows()` 是分析宽表（每条弹幕+当时讲解商品+VOC分类+当时在线），经 `/api/export/analysis.csv` 导出。三条铁律：
+
+1. **锁单源**：双源同存同一条弹幕，不锁源直接查 danmu 表会重复计数（实测session 6：browser 10134 + live 10173，实为同一批）。宽表默认按 `_session_source` 取该场数据更全的源
+2. **时间只用 `created_at`**：`ts` 字段两源语义不一致（主源是unix时间戳，备源恒为0），不可用于时间分析
+3. **跨源 user_id 不可贯通**：两源 user_id 交集为 0（主源webcastUid，备源另一套），用户级分析必须限定单源；且备源无 level/fans_level/sec_uid
+
+另：屏蔽词命中的弹幕多为商家机器人刷屏（实测占某场70%），宽表默认剔除，`include_blocked=1` 可全保留并用 `is_blocked_word` 列自行筛。
+
 加列走`store.py`的`_MIGRATIONS`列表（ALTER TABLE补列，兼容旧库），不要改CREATE TABLE后指望旧库自动变。
 
 ## 代码约定

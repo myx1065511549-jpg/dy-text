@@ -237,6 +237,7 @@
   <div class="srcsw">
     <span class="si" id="newSessBtn" title="结束当前场次并开新场,数据归档保留">新场次</span>
     <span class="si" id="histBtn" title="查看历史场次汇总">历史场次</span>
+    <span class="si" id="exportBtn" title="导出本场分析宽表CSV:每条弹幕带当时讲解商品/VOC分类/在线人数,已锁单源去重,Excel直接打开">导出</span>
   </div>
   <span class="spacer"></span>
   <div class="switch">
@@ -774,6 +775,7 @@ $('newSessBtn').onclick=()=>{
   if(confirm('结束当前场次并开启新场?当前数据会归档保留,可在「历史场次」查看')) fetch('/api/new_session',{method:'POST'});
 };
 $('histBtn').onclick=openSessions;
+$('exportBtn').onclick=()=>{ window.location='/api/export/analysis.csv'; };
 function fmtRate(r){ return r==null?'--':(r*100).toFixed(1)+'%'; }
 function openSessions(){
   curModalUser=null; $('mUser').textContent='历史场次'; $('mCnt').textContent='';
@@ -789,12 +791,16 @@ function openSessions(){
       const box=document.createElement('div'); box.className='h'; box.style.display='block';
       const t1=document.createElement('div');
       t1.style.cssText='display:flex;align-items:center;gap:8px;margin-bottom:4px';
+      const btnCss='background:var(--bg4);border:1px solid var(--border);color:var(--text2);'
+        +'font-size:11px;padding:1px 8px;border-radius:5px;cursor:pointer';
       t1.innerHTML='<span style="font-weight:600"></span><span class="tm"></span>'
+        +'<button title="导出这场的分析宽表CSV" style="margin-left:auto;'+btnCss+'">导出</button>'
         +(cur?'<span style="color:var(--green);font-size:11px">进行中</span>'
-             :'<button style="margin-left:auto;background:var(--bg4);border:1px solid var(--border);color:var(--text2);font-size:11px;padding:1px 8px;border-radius:5px;cursor:pointer">删除</button>');
+             :'<button style="'+btnCss+'">删除</button>');
       t1.children[0].textContent='房间 '+(s.room_id||'--');
       t1.children[1].textContent=(s.started_at||'').slice(5,16)+' ~ '+(s.ended_at?s.ended_at.slice(5,16):'');
-      if(!cur) t1.children[2].onclick=()=>{ if(confirm('删除这场的全部数据?不可恢复'))
+      t1.children[2].onclick=()=>{ window.location='/api/export/analysis.csv?session_id='+s.id; };
+      if(!cur) t1.children[3].onclick=()=>{ if(confirm('删除这场的全部数据?不可恢复'))
         fetch('/api/session/'+s.id,{method:'DELETE'}).then(()=>openSessions()); };
       const t2=document.createElement('div');
       t2.style.cssText='color:var(--text2);font-size:12px;line-height:1.7';

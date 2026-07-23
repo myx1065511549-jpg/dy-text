@@ -231,3 +231,24 @@ GitHub:源码已推(ebd10d8)。第三方 douyinLive 二进制按 docs 说明下�
 - 结论:技术走得通,识别够用,但是四项里最重(持续算力+ffmpeg/ASR依赖+断流/签名/降噪工程),建议单独立项。价值点:话术合规扫描(极限词标红)、话术×商品、话术×弹幕对齐。
 
 坑:装 funasr 连带升 protobuf 到7.x + transformers 等;已验证 douyin proto roundtrip + 17测试照常,没搞坏。装了 imageio-ffmpeg/funasr/torch/torchaudio(CPU),模型约3-4GB在 modelscope 缓存。实时管线代码未写,仅离线验证。
+
+## 2026-07-23 11:08
+
+数据分析适用性:先做体检暴露问题,再补分析宽表+CSV导出+去重。
+
+体检发现(实测46MB真库):
+- 跨源 user_id 交集为 **0**(主源6327用户/备源31用户),用户级分析必须锁单源
+- 备源 sec_uid/level/fans_level **全空**;主源 fans_level 也95%空、gender 74%空
+- `ts` 字段两源语义不一致(主源unix时间戳,备源恒0),**时间分析只能用 created_at**
+- 双源同存同一条弹幕(session 6:browser 10134 + live 10173 实为同一批),不锁源必重复计数
+- enter 表 219703行/76896人,人均2.9次,算进场人数要去重
+- 13场里只有2场有量(20307/9279),其余是调试短会话
+
+做了什么:
+- `stats.analysis_rows()` 分析宽表:每条弹幕 + 当时讲解商品(名/价) + 命中VOC分类 + is_risk + 当时在线人数 + 时间维度拆列(date/hour/minute)。默认按 `_session_source` 锁单源、去重、剔除屏蔽词刷屏。`ANALYSIS_COLUMNS` 定列序。
+- `/api/export/analysis.csv`(支持 session_id/source/dedup/include_blocked)与 `/api/export/table.csv`(白名单原始表)。CSV 带 UTF-8 BOM,Excel 直接打开中文不乱码;表名走白名单防注入。
+- 前端:顶栏「导出」按钮导当前场;历史场次弹层每场一个「导出」按钮。
+- 测试+3(analysis_rows联动/去重/屏蔽词),共 20 passed。
+
+关键发现:某场 10173 行里 7250 行(70%)命中屏蔽词,全是**商家自己的机器人刷屏话术**(如「久坐办公,居家游戏,户外露营,一定要试试」6169条)。默认剔除是对的,但不能默默丢,所以加了 `is_blocked_word` 标记列 + `include_blocked` 开关,做到可见可控。
+另一发现:导出宽表反过来暴露 VOC 关键词盲区——真实尺码提问(「什么码」「100斤拍什么」「拍大一的」)没被「尺码型号」类命中,该类关键词配的是码数/尺寸/身高体重。VOC 关键词需按真实弹幕调一轮。

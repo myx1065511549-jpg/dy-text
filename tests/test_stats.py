@@ -303,7 +303,96 @@ def test_product_explain_linkage():
     os.remove(db)
 
 
+def test_analysis_rows():
+    """分析宽表:弹幕带上当时讲解商品/VOC分类/当时在线;默认锁单源防双源重复。"""
+    db, s = _mk()
+    s.current_session("1")
+    s.save_products("1", [
+        {"product_id": "p1", "title": "护腰坐垫", "price": 16800, "idx": 1},
+        {"product_id": "p2", "title": "露营三件套", "price": 9900, "idx": 2},
+    ])
+    for pid in ("p1", "p2", "p1"):
+        s.save({"type": "explain", "room_id": "1", "product_id": pid, "status": 2})
+    # live 源两条(主),browser 源一条与live重复(模拟双源同存同一句)
+    _chat(s, "u1", "多少钱一个", source="live")
+    _chat(s, "u2", "这是假货吧", source="live")
+    _chat(s, "b1", "多少钱一个", source="browser")
+    s.save({"type": "room_stat", "room_id": "1", "online_count": 100, "ts": 1, "source": "live"})
+    s.save({"type": "room_stat", "room_id": "1", "online_count": 200, "ts": 2, "source": "live"})
+    s.commit()
+
+    ev = [r[0] for r in s.conn.execute("SELECT id FROM explain_event ORDER BY id").fetchall()]
+    for i, t in zip(ev, ["2026-07-16 10:00:00", "2026-07-16 10:05:00", "2026-07-16 10:10:00"]):
+        s.conn.execute("UPDATE explain_event SET created_at=? WHERE id=?", (t, i))
+    dm = [r[0] for r in s.conn.execute("SELECT id FROM danmu ORDER BY id").fetchall()]
+    for i, t in zip(dm, ["2026-07-16 10:02:00", "2026-07-16 10:06:00", "2026-07-16 10:02:00"]):
+        s.conn.execute("UPDATE danmu SET created_at=? WHERE id=?", (t, i))
+    rs = [r[0] for r in s.conn.execute("SELECT id FROM room_stat ORDER BY id").fetchall()]
+    for i, t in zip(rs, ["2026-07-16 10:01:00", "2026-07-16 10:04:00"]):
+        s.conn.execute("UPDATE room_stat SET created_at=? WHERE id=?", (t, i))
+    s.commit()
+
+    rows = stats.analysis_rows(s.conn)
+    # 自动锁 live(数据更全的源),browser 那条重复不进来
+    assert len(rows) == 2, rows
+    assert all(r["source"] == "live" for r in rows)
+
+    r1, r2 = rows[0], rows[1]
+    # 10:02 落在 p1 窗口[10:00,10:05),在线取之前最近的 10:01=100
+    assert r1["content"] == "多少钱一个"
+    assert r1["product_title"] == "护腰坐垫" and r1["product_price_yuan"] == 168.0
+    assert "价格优惠" in r1["voc_categories"] and r1["is_risk"] == 0
+    assert r1["online_count"] == 100
+    # 10:06 落在 p2 窗口[10:05,10:10),在线取 10:04=200
+    assert r2["product_title"] == "露营三件套"
+    assert r2["is_risk"] == 1 and "风险负面" in r2["voc_categories"]
+    assert r2["online_count"] == 200
+    # 宽表列齐全
+    assert set(stats.ANALYSIS_COLUMNS).issubset(set(r1.keys()))
+    s.close()
+    os.remove(db)
+
+
+def test_analysis_rows_dedup():
+    """同源内完全相同的重复行(同用户同内容同时间)去重。"""
+    db, s = _mk()
+    s.current_session("1")
+    for _ in range(3):
+        _chat(s, "u1", "重复弹幕", source="live")
+    s.commit()
+    s.conn.execute("UPDATE danmu SET created_at='2026-07-16 10:00:00'")
+    s.commit()
+    assert len(stats.analysis_rows(s.conn, dedup=True)) == 1
+    assert len(stats.analysis_rows(s.conn, dedup=False)) == 3
+    s.close()
+    os.remove(db)
+
+
+def test_analysis_rows_blocked_words():
+    """命中屏蔽词的弹幕(商家机器人刷屏)默认剔除;include_blocked 可全保留并带标记列。"""
+    db, s = _mk()
+    s.current_session("1")
+    s.block_word("早拍早发货")
+    _chat(s, "u1", "活动名额有限早拍早发货", source="live")   # 机器人刷屏
+    _chat(s, "u2", "多少钱一个", source="live")               # 真实观众
+    s.commit()
+
+    rows = stats.analysis_rows(s.conn)          # 默认剔除
+    assert len(rows) == 1 and rows[0]["content"] == "多少钱一个"
+    assert rows[0]["is_blocked_word"] == 0
+
+    allrows = stats.analysis_rows(s.conn, include_blocked=True)
+    assert len(allrows) == 2
+    flags = {r["content"]: r["is_blocked_word"] for r in allrows}
+    assert flags["活动名额有限早拍早发货"] == 1 and flags["多少钱一个"] == 0
+    s.close()
+    os.remove(db)
+
+
 if __name__ == "__main__":
+    test_analysis_rows()
+    test_analysis_rows_dedup()
+    test_analysis_rows_blocked_words()
     test_product_explain_linkage()
     test_stats_scoped_to_current_session()
     test_stats_source_filter_no_double_count()

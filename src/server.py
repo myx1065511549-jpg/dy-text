@@ -8,6 +8,8 @@
 运行:python src/server.py  → 浏览器打开 http://127.0.0.1:8848/
 """
 import os
+import io
+import csv
 import sys
 import json
 import time
@@ -31,7 +33,7 @@ if _FROZEN:
     os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", _res("ms-playwright"))
 
 from fastapi import FastAPI, WebSocket, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 import uvicorn
 
 sys.path.insert(0, _BASE)
@@ -547,6 +549,61 @@ def api_product_danmu(product_id: str, limit: int = 300):
         return stats.product_danmu(c, product_id, limit, _src())
     finally:
         c.close()
+
+
+# ---------------- 数据导出(供离线分析) ----------------
+# 导出表白名单:避免表名拼进SQL造成注入
+_EXPORT_TABLES = ("danmu", "enter", "likes", "gift", "room_stat",
+                  "product", "explain_event", "session")
+
+
+def _csv_response(rows, filename, columns=None):
+    """dict列表转CSV下载。带UTF-8 BOM,Excel 打开中文不乱码。"""
+    buf = io.StringIO()
+    cols = columns or (list(rows[0].keys()) if rows else [])
+    if cols:
+        w = csv.DictWriter(buf, fieldnames=cols, extrasaction="ignore")
+        w.writeheader()
+        w.writerows(rows)
+    data = "﻿" + buf.getvalue()
+    return Response(content=data, media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@app.get("/api/export/analysis.csv")
+def api_export_analysis(session_id: int = None, source: str = None, dedup: int = 1,
+                        include_blocked: int = 0):
+    """分析宽表CSV:弹幕+当时讲解商品+VOC分类+当时在线。默认当前场次、自动锁单源、去重、
+    剔除命中屏蔽词的机器人刷屏(include_blocked=1 可全保留,用 is_blocked_word 列自行筛)。"""
+    c = _conn()
+    try:
+        rows = stats.analysis_rows(c, session_id, source, dedup=bool(dedup),
+                                   include_blocked=bool(include_blocked))
+    finally:
+        c.close()
+    sid = session_id or (rows[0]["session_id"] if rows else "current")
+    return _csv_response(rows, f"analysis_session{sid}.csv", stats.ANALYSIS_COLUMNS)
+
+
+@app.get("/api/export/table.csv")
+def api_export_table(table: str, session_id: int = None):
+    """原始表CSV(白名单表)。给要自己跑SQL/透视的场景用。"""
+    if table not in _EXPORT_TABLES:
+        return Response(content=f"table must be one of {_EXPORT_TABLES}",
+                        status_code=400, media_type="text/plain; charset=utf-8")
+    c = _conn()
+    try:
+        c.row_factory = sqlite3.Row
+        sql = f"SELECT * FROM {table}"
+        params = ()
+        if session_id is not None and table != "session":
+            sql += " WHERE session_id=?"
+            params = (session_id,)
+        rows = [dict(r) for r in c.execute(sql, params).fetchall()]
+    finally:
+        c.close()
+    suffix = f"_session{session_id}" if session_id is not None else ""
+    return _csv_response(rows, f"{table}{suffix}.csv")
 
 
 @app.get("/api/top_users")
