@@ -6,6 +6,7 @@ import re
 import bisect
 import jieba
 import datetime
+import unicodedata
 from collections import Counter
 
 STOPWORDS = set(
@@ -56,6 +57,14 @@ def _cut_time(range_min):
             ).strftime("%Y-%m-%d %H:%M:%S")
 
 
+def _is_text_hotword(word):
+    """只保留包含文字或数字的热词，排除 Emoji 和表情包占位文本。"""
+    word = (word or "").strip()
+    if not word or re.fullmatch(r"\[[^\[\]\r\n]{1,16}\]", word):
+        return False
+    return any(unicodedata.category(char)[0] in {"L", "N"} for char in word)
+
+
 def hotwords(conn, limit=30, source=None, session_id=None):
     sc, sp = _scope(conn, source, session_id)
     bw = _blocked_words(conn)
@@ -66,7 +75,8 @@ def hotwords(conn, limit=30, source=None, session_id=None):
             continue
         for w in jieba.cut(c):
             w = w.strip()
-            if len(w) < 2 or w in STOPWORDS or w in bw or re.fullmatch(r"[0-9a-zA-Z]+", w):
+            if (len(w) < 2 or not _is_text_hotword(w) or w in STOPWORDS or
+                    w in bw or re.fullmatch(r"[0-9a-zA-Z]+", w)):
                 continue
             cnt[w] += 1
     return [{"word": w, "count": n} for w, n in cnt.most_common(limit)]

@@ -20,6 +20,8 @@
   header .logo .b{color:var(--accent)}
   .rid{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--text2);
     background:var(--bg3);padding:3px 8px;border-radius:6px}
+  .room-name{font-size:12px;font-weight:600;color:var(--text);max-width:180px;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .dot{width:8px;height:8px;border-radius:50%;background:var(--muted);transition:.3s}
   .dot.on{background:var(--green);box-shadow:0 0 8px var(--green)}
   .stat-live{font-size:12px;color:var(--text2)}
@@ -41,6 +43,10 @@
   .switch button{background:var(--accent);color:#fff;border:none;padding:6px 14px;border-radius:7px;
     font-size:13px;cursor:pointer;font-weight:600}
   .switch button:hover{opacity:.9}
+  .stop-btn{min-height:32px;padding:5px 11px;border:1px solid rgba(254,44,85,.6);border-radius:7px;
+    background:rgba(254,44,85,.08);color:var(--accent);font-size:12px;font-weight:600;cursor:pointer}
+  .stop-btn:hover:not(:disabled){background:rgba(254,44,85,.16)}
+  .stop-btn:disabled{cursor:default;opacity:.65}
   .upd{font-size:12px;color:var(--muted)}
   .wrap{padding:14px 20px;max-width:1560px;margin:0 auto}
 
@@ -115,6 +121,11 @@
   .prod-gate{font-size:12px;color:var(--text2);line-height:1.8;padding:4px 2px}
   .prod-gate code{background:var(--bg3);padding:1px 6px;border-radius:4px;color:var(--cyan);
     font-size:11px;font-family:ui-monospace,monospace}
+  .prod-gate .prod-login{margin-top:9px;background:var(--accent);color:#fff;border:0;border-radius:6px;
+    min-height:36px;padding:7px 14px;font-size:12px;font-weight:600;cursor:pointer}
+  .prod-gate .prod-login:hover:not(:disabled){opacity:.9}
+  .prod-gate .prod-login:disabled{cursor:wait;opacity:.65}
+  .prod-gate .prod-login-hint{margin-top:5px;color:var(--muted);font-size:11px;line-height:1.6}
   /* VOC 配置编辑 */
   .vc-row{display:flex;gap:6px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border)}
   .vc-row input[type=text]{background:var(--bg3);border:1px solid var(--border);color:var(--text);
@@ -228,6 +239,7 @@
 <header>
   <span class="logo"><span class="b">▮▮</span> 抖音直播实时看板</span>
   <span class="rid" id="rid">--</span>
+  <span class="room-name" id="roomName" title="">账号名获取中…</span>
   <span class="dot" id="dot"></span><span class="stat-live" id="statTxt">连接中</span>
   <div class="srcsw" id="srcsw">
     <span class="si on" data-s="live"><i class="hd"></i>主源·实时</span>
@@ -244,6 +256,7 @@
     <input id="roomInput" placeholder="输入直播间 web_rid" spellcheck="false">
     <button id="switchBtn">切换监控</button>
   </div>
+  <button class="stop-btn" id="stopBtn" type="button" title="停止后台采集并关闭本地看板服务">停止采集</button>
   <span class="upd" id="upd">最后更新 --:--:--</span>
 </header>
 
@@ -388,8 +401,53 @@ function fmtWan(n){ if(n==null) return '--'; if(n>=10000) return (n/10000).toFix
 function nowTime(){ return new Date().toTimeString().slice(0,8); }
 function touch(){ $('upd').textContent='最后更新 '+nowTime(); }
 
+let roomIdentityWs=null, roomIdentityTimer=null, roomIdentityRid='';
+function setRoomName(name,title){
+  $('roomName').textContent=name?'账号 '+name:'账号名未获取';
+  $('roomName').title=title||'';
+}
+function loadRoomIdentity(rid){
+  const key=String(rid||'').trim();
+  roomIdentityRid=key;
+  if(roomIdentityTimer){ clearTimeout(roomIdentityTimer); roomIdentityTimer=null; }
+  if(roomIdentityWs){ roomIdentityWs.onclose=null; roomIdentityWs.close(); roomIdentityWs=null; }
+  if(!key){ setRoomName('',''); return; }
+  const cacheKey='douyin-room-name:'+key;
+  let cached='';
+  try{ cached=sessionStorage.getItem(cacheKey)||''; }catch{}
+  if(cached) setRoomName(cached,'');
+  else{ $('roomName').textContent='账号名获取中…'; $('roomName').title=''; }
+  let resolved=false, socket;
+  try{ socket=new WebSocket('ws://127.0.0.1:1088/ws/'+encodeURIComponent(key)); }
+  catch{ roomIdentityTimer=setTimeout(()=>loadRoomIdentity(key),5000); return; }
+  roomIdentityWs=socket;
+  socket.onmessage=ev=>{
+    if(key!==roomIdentityRid) return;
+    let data;
+    try{ data=JSON.parse(ev.data); }catch{ return; }
+    const name=String(data.live_name||data.livename||'').trim();
+    const title=String(data.title||'').trim();
+    if(name){
+      resolved=true;
+      try{ sessionStorage.setItem(cacheKey,name); }catch{}
+      setRoomName(name,title);
+      socket.onclose=null; socket.close();
+      if(roomIdentityWs===socket) roomIdentityWs=null;
+    }else if(data.code==='ROOM_NOT_FOUND'){
+      resolved=true; setRoomName('',data.status_text||'');
+      socket.onclose=null; socket.close();
+      if(roomIdentityWs===socket) roomIdentityWs=null;
+    }
+  };
+  socket.onerror=()=>{};
+  socket.onclose=()=>{
+    if(roomIdentityWs===socket) roomIdentityWs=null;
+    if(!resolved&&key===roomIdentityRid) roomIdentityTimer=setTimeout(()=>loadRoomIdentity(key),5000);
+  };
+}
+
 fetch('/api/config').then(r=>r.json()).then(c=>{ setRid(c.web_rid); $('roomInput').value=c.web_rid; setSess(c.session_started); });
-function setRid(r){ $('rid').textContent='房间号 '+r; }
+function setRid(r){ $('rid').textContent='房间号 '+r; loadRoomIdentity(r); }
 function setSess(started){ $('sess').textContent='本场 '+(started?started.slice(11,16):'--:--')+' 起'; }
 function refreshSess(){ fetch('/api/config').then(r=>r.json()).then(c=>setSess(c.session_started)); }
 
@@ -495,10 +553,15 @@ function loadSummary(){
 }
 function loadSeries(){ fetch('/api/online_series').then(r=>r.json()).then(d=>{
   series=d.map(p=>({ts:Date.parse(p.t.replace(' ','T')),v:p.v})).filter(p=>!isNaN(p.ts)); drawChart(); }); }
+function isEmojiOnlyWord(word){
+  const s=(word==null?'':String(word)).trim();
+  return !s || !/[\p{L}\p{N}]/u.test(s) || /^\[[^\[\]\r\n]{1,16}\]$/u.test(s);
+}
 function loadHotrank(){ fetch('/api/hotwords').then(r=>r.json()).then(list=>{
-  const el=$('hotrank'); if(!list.length){ el.innerHTML='<span class="empty">暂无热词</span>'; return; }
+  const words=(Array.isArray(list)?list:[]).filter(w=>w&& !isEmojiOnlyWord(w.word));
+  const el=$('hotrank'); if(!words.length){ el.innerHTML='<span class="empty">暂无文字热词</span>'; return; }
   el.innerHTML='';
-  list.slice(0,20).forEach((w,i)=>{ const row=document.createElement('div'); row.className='u';
+  words.slice(0,20).forEach((w,i)=>{ const row=document.createElement('div'); row.className='u';
     row.innerHTML='<span class="idx'+(i<3?' top':'')+'">'+(i+1)+'</span><span class="n"></span>'
       +'<span class="c">'+w.count+'</span><span class="blkw">屏蔽</span>';
     row.children[1].textContent=w.word;
@@ -697,6 +760,58 @@ function loadAudience(){ fetch('/api/audience').then(r=>r.json()).then(a=>{
 let curExplain=null;
 function fmtDur(s){ if(s==null) return '--'; if(s<60) return s+'秒'; const m=Math.floor(s/60),ss=s%60; return m+'分'+(ss?ss+'秒':''); }
 function fmtPrice(cents){ if(!cents) return '—'; return '¥'+(cents/100).toFixed(2).replace(/\.00$/,''); }
+const LOGIN_HELPER='http://127.0.0.1:8849';
+let dashboardStopping=false;
+function stopDashboard(){
+  if(dashboardStopping||!confirm('确定停止采集并关闭看板服务吗？')) return;
+  dashboardStopping=true;
+  const btn=$('stopBtn'); btn.disabled=true; btn.textContent='正在停止…';
+  fetch(LOGIN_HELPER+'/shutdown',{method:'POST',headers:{'X-Douyin-Dashboard':'stop'}}).then(r=>{
+    if(!r.ok) throw new Error('shutdown rejected');
+    if(ws){ ws.onclose=null; ws.close(); }
+    $('dot').classList.remove('on'); $('statTxt').textContent='已停止';
+    btn.textContent='已停止'; $('upd').textContent='后台采集已停止，可以关闭页面';
+  }).catch(()=>{
+    dashboardStopping=false; btn.disabled=false; btn.textContent='停止采集';
+    alert('停止失败，请使用项目目录中的「停止看板.vbs」。');
+  });
+}
+$('stopBtn').onclick=stopDashboard;
+let loginFlowBusy=false,loginFlowText='点击后会打开专用登录窗口，成功后自动保存。',loginPollTimer=null;
+function updateLoginGate(){
+  const btn=$('productLoginBtn'),hint=$('productLoginHint');
+  if(btn){ btn.disabled=loginFlowBusy; btn.textContent=loginFlowBusy?'登录处理中…':'登录抖音'; }
+  if(hint) hint.textContent=loginFlowText;
+}
+function stopLoginPoll(){ if(loginPollTimer){ clearInterval(loginPollTimer); loginPollTimer=null; } }
+function applyLoginState(state){
+  loginFlowText=state.message||'正在处理登录';
+  loginFlowBusy=state.phase==='running'||state.phase==='restarting';
+  updateLoginGate();
+  if(state.phase==='success'){
+    stopLoginPoll(); loginFlowBusy=false; updateLoginGate();
+    setTimeout(loadProducts,1000); setTimeout(loadProducts,9000);
+  }else if(state.phase==='failed'){
+    stopLoginPoll(); loginFlowBusy=false; updateLoginGate();
+  }
+}
+function pollLoginState(){
+  fetch(LOGIN_HELPER+'/status',{cache:'no-store'}).then(r=>r.json()).then(applyLoginState)
+    .catch(()=>{ stopLoginPoll(); loginFlowBusy=false; loginFlowText='登录服务未启动，请重新启动看板后再试。'; updateLoginGate(); });
+}
+function openDouyinLogin(){
+  if(loginFlowBusy) return;
+  loginFlowBusy=true; loginFlowText='正在打开专用登录窗口…'; updateLoginGate();
+  fetch(LOGIN_HELPER+'/login',{method:'POST'}).then(r=>{
+    if(!r.ok) throw new Error('login helper rejected');
+    return r.json();
+  }).then(state=>{
+    applyLoginState(state); stopLoginPoll();
+    if(state.phase==='running'||state.phase==='restarting') loginPollTimer=setInterval(pollLoginState,1000);
+  }).catch(()=>{
+    loginFlowBusy=false; loginFlowText='登录服务未启动，请重新启动看板后再试。'; updateLoginGate();
+  });
+}
 function loadProducts(){
   Promise.all([
     fetch('/api/login_status').then(r=>r.json()),
@@ -706,7 +821,10 @@ function loadProducts(){
     const el=$('products'),meta=$('prodMeta');
     if(!login.logged_in){
       meta.textContent='未登录';
-      el.innerHTML='<div class="prod-gate">商品分析需登录抖音账号。<br>在项目目录运行 <code>python login_capture.py</code> 扫码登录,自动生效。</div>';
+      el.innerHTML='<div class="prod-gate">商品分析需要抖音登录态。<br>'
+        +'<button class="prod-login" id="productLoginBtn" type="button">登录抖音</button>'
+        +'<div class="prod-login-hint" id="productLoginHint"></div></div>';
+      $('productLoginBtn').onclick=openDouyinLogin; updateLoginGate();
       syncHeights(); return;
     }
     const prods=(ps.products)||[];
@@ -990,7 +1108,7 @@ let ws;
 function connect(){
   ws=new WebSocket('ws://'+location.host+'/ws');
   ws.onopen=()=>{ $('dot').classList.add('on'); $('statTxt').textContent='采集中'; };
-  ws.onclose=()=>{ $('dot').classList.remove('on'); $('statTxt').textContent='断开,重连中'; setTimeout(connect,2000); };
+  ws.onclose=()=>{ $('dot').classList.remove('on'); if(dashboardStopping) return; $('statTxt').textContent='断开,重连中'; setTimeout(connect,2000); };
   ws.onmessage=ev=>{ const m=JSON.parse(ev.data); touch();
     if(m.kind==='switch'){ resetAll(m.web_rid); loadBlocklist(); }
     else if(m.kind==='online'){ $('m_online').textContent=m.v;

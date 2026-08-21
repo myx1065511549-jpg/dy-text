@@ -31,7 +31,12 @@ deps*.txt
 /tools/
 worker.log
 /build_work/
+/release/
 build_log*.txt
+
+# Windows 发布脚本的临时文件
+/installer/payload.zip
+/installer/installer-stub.exe
 
 # 密钥与本地配置(禁止入库)
 .env

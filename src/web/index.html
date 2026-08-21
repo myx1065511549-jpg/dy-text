@@ -20,6 +20,8 @@
   header h1{font-size:16px;font-weight:600}
   .rid{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--text2);
     background:var(--bg3);padding:3px 8px;border-radius:6px}
+  .room-name{font-size:12px;font-weight:600;color:var(--text);max-width:180px;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .dot{width:8px;height:8px;border-radius:50%;background:var(--muted);
     transition:background .3s}
   .dot.on{background:#28c76f;box-shadow:0 0 8px #28c76f}
@@ -46,6 +48,7 @@
   <span class="dot" id="dot"></span>
   <h1>实时弹幕</h1>
   <span class="rid" id="rid">--</span>
+  <span class="room-name" id="roomName" title="">账号名获取中…</span>
   <span class="spacer"></span>
   <a class="nav" href="/dashboard">数据看板 →</a>
 </header>
@@ -55,8 +58,58 @@ const stream = document.getElementById('stream');
 const dot = document.getElementById('dot');
 const MAX = 300;
 
+let roomIdentityWs=null, roomIdentityTimer=null, roomIdentityRid='';
+function setRoomName(name,title){
+  const el=document.getElementById('roomName');
+  el.textContent=name?'账号 '+name:'账号名未获取';
+  el.title=title||'';
+}
+function loadRoomIdentity(rid){
+  const key=String(rid||'').trim();
+  roomIdentityRid=key;
+  if(roomIdentityTimer){ clearTimeout(roomIdentityTimer); roomIdentityTimer=null; }
+  if(roomIdentityWs){ roomIdentityWs.onclose=null; roomIdentityWs.close(); roomIdentityWs=null; }
+  if(!key){ setRoomName('',''); return; }
+  const cacheKey='douyin-room-name:'+key;
+  let cached='';
+  try{ cached=sessionStorage.getItem(cacheKey)||''; }catch{}
+  if(cached) setRoomName(cached,'');
+  else{
+    const el=document.getElementById('roomName');
+    el.textContent='账号名获取中…'; el.title='';
+  }
+  let resolved=false, socket;
+  try{ socket=new WebSocket('ws://127.0.0.1:1088/ws/'+encodeURIComponent(key)); }
+  catch{ roomIdentityTimer=setTimeout(()=>loadRoomIdentity(key),5000); return; }
+  roomIdentityWs=socket;
+  socket.onmessage=ev=>{
+    if(key!==roomIdentityRid) return;
+    let data;
+    try{ data=JSON.parse(ev.data); }catch{ return; }
+    const name=String(data.live_name||data.livename||'').trim();
+    const title=String(data.title||'').trim();
+    if(name){
+      resolved=true;
+      try{ sessionStorage.setItem(cacheKey,name); }catch{}
+      setRoomName(name,title);
+      socket.onclose=null; socket.close();
+      if(roomIdentityWs===socket) roomIdentityWs=null;
+    }else if(data.code==='ROOM_NOT_FOUND'){
+      resolved=true; setRoomName('',data.status_text||'');
+      socket.onclose=null; socket.close();
+      if(roomIdentityWs===socket) roomIdentityWs=null;
+    }
+  };
+  socket.onerror=()=>{};
+  socket.onclose=()=>{
+    if(roomIdentityWs===socket) roomIdentityWs=null;
+    if(!resolved&&key===roomIdentityRid) roomIdentityTimer=setTimeout(()=>loadRoomIdentity(key),5000);
+  };
+}
+
 fetch('/api/config').then(r=>r.json()).then(c=>{
-  document.getElementById('rid').textContent = c.web_rid;
+  document.getElementById('rid').textContent = '房间号 '+c.web_rid;
+  loadRoomIdentity(c.web_rid);
 });
 
 // 载入最近弹幕作为初始

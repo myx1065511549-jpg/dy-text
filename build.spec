@@ -58,7 +58,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="douyin-dashboard",
+    name="douyin-dashboard.backend",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

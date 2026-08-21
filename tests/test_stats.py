@@ -60,6 +60,25 @@ def test_stats_source_filter_no_double_count():
     os.remove(db)
 
 
+def test_hotwords_excludes_emoji_and_sticker_tokens():
+    """Emoji、纯符号和表情包占位文本不能进入热词榜。"""
+    db, s = _mk()
+    _chat(s, "u1", "😂😂")
+    _chat(s, "u2", "🔥🔥")
+    _chat(s, "u3", "[比心]")
+    _chat(s, "u4", "超级好用")
+    s.commit()
+
+    words = {item["word"] for item in stats.hotwords(s.conn, 30, "live")}
+    assert "😂😂" not in words
+    assert "🔥🔥" not in words
+    assert "[比心]" not in words
+    assert words, "正常文字热词不应被全部过滤"
+
+    s.close()
+    os.remove(db)
+
+
 def test_sessions_summary():
     db, s = _mk()
     # 第一场:2人发言、3人进场,含一条VOC(价格)
